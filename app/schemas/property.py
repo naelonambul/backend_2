@@ -2,12 +2,12 @@ from pydantic import AnyHttpUrl, BaseModel, Field
 
 
 class PropertyCreate(BaseModel):
-    title: str = Field(min_length=1, max_length=100)
-    address: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=200)
+    address: str = Field(min_length=1, max_length=300)
     price_krw: int = Field(ge=0)
     area_m2: float = Field(gt=0)
     room_count: int = Field(ge=0)
-    description: str = Field(min_length=1, max_length=1000)
+    description: str = Field(min_length=1, max_length=5000)
     image_url: AnyHttpUrl | None = None
 
 

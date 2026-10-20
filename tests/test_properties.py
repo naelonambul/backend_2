@@ -125,11 +125,11 @@ def test_current_user_includes_configured_role(client):
 @pytest.mark.parametrize(
     "changes",
     [
-        {"title": ""}, {"title": "x" * 101}, {"address": ""},
-        {"address": "x" * 101}, {"price_krw": -1}, {"price_krw": "invalid"},
+        {"title": ""}, {"title": "x" * 201}, {"address": ""},
+        {"address": "x" * 301}, {"price_krw": -1}, {"price_krw": "invalid"},
         {"area_m2": 0}, {"area_m2": -1}, {"area_m2": "invalid"},
         {"room_count": -1}, {"room_count": "invalid"},
-        {"description": ""}, {"description": "x" * 1001},
+        {"description": ""}, {"description": "x" * 5001},
         {"image_url": "javascript:alert(1)"},
     ],
 )
@@ -147,3 +147,17 @@ def test_zero_price_and_room_count_are_allowed(client):
     assert response.status_code == 200
     assert response.json()["price_krw"] == 0
     assert response.json()["room_count"] == 0
+
+
+def test_text_fields_accept_their_exact_maximum_lengths(client):
+    signup_and_login(client, "seller@example.com")
+
+    response = client.post(
+        "/properties",
+        json=listing(title="t" * 200, address="a" * 300, description="d" * 5000),
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["title"]) == 200
+    assert len(response.json()["address"]) == 300
+    assert len(response.json()["description"]) == 5000
