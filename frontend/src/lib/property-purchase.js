@@ -8,11 +8,6 @@ function clearPurchaseSession(sessionStorage) {
   } catch { /* Storage may be unavailable. */ }
 }
 
-function isRetryable(error) {
-  const status = error?.status
-  return status == null || status === 408 || status === 425 || status === 429 || status >= 500
-}
-
 function resolveConfirmedPurchase(result, sessionStorage) {
   if (result?.status === 'pending') return { state: 'pending', ...result }
   if (result?.status === 'refund_pending') return { state: 'refund_pending', ...result }
@@ -27,20 +22,17 @@ function resolveConfirmedPurchase(result, sessionStorage) {
   return { state: 'retryable-error', ...result, error: new Error('결제 결과를 확인하지 못했습니다. 다시 확인해 주세요.') }
 }
 
-async function confirmWithBackend({ api, purchaseId, paymentId, sessionStorage, retainOnTerminalError = false }) {
+async function confirmWithBackend({ api, purchaseId, paymentId, sessionStorage }) {
   try {
     const result = await api.confirmPurchase(purchaseId, { payment_id: paymentId })
     return resolveConfirmedPurchase(result, sessionStorage)
   } catch (error) {
-    if (isRetryable(error)) return { state: 'retryable-error', error }
-    if (retainOnTerminalError) return { state: 'retryable-error', error }
-    clearPurchaseSession(sessionStorage)
-    return { state: 'terminal-error', error }
+    return { state: 'retryable-error', error }
   }
 }
 
 async function reconcileOrderWithBackend({ api, purchaseId, paymentId, sessionStorage }) {
-  return confirmWithBackend({ api, purchaseId, paymentId, sessionStorage, retainOnTerminalError: true })
+  return confirmWithBackend({ api, purchaseId, paymentId, sessionStorage })
 }
 
 async function verifyCancelledOrder({ api, purchaseId, paymentId, sessionStorage }) {
@@ -77,7 +69,7 @@ export async function startPropertyPurchase({
   if (unresolvedPurchaseId) {
     try { unresolvedPaymentId = sessionStorage?.getItem(PROPERTY_PURCHASE_PAYMENT_SESSION_KEY) } catch { /* Storage may be unavailable. */ }
     if (!unresolvedPaymentId) return { state: 'retryable-error', error: new Error('이전 결제 결과를 먼저 확인해 주세요.') }
-    const priorPurchase = await confirmPropertyPurchaseReturn({ api, sessionStorage, retainOnTerminalError: true })
+    const priorPurchase = await confirmPropertyPurchaseReturn({ api, sessionStorage })
     if (priorPurchase.state !== 'failed' && priorPurchase.state !== 'cancelled') return priorPurchase
   }
 
@@ -128,7 +120,7 @@ export async function startPropertyPurchase({
   })
 }
 
-export async function confirmPropertyPurchaseReturn({ api, sessionStorage, paymentId, retainOnTerminalError = false }) {
+export async function confirmPropertyPurchaseReturn({ api, sessionStorage, paymentId }) {
   let purchaseId = null
   let savedPaymentId = null
   try {
@@ -138,9 +130,8 @@ export async function confirmPropertyPurchaseReturn({ api, sessionStorage, payme
   if (!purchaseId) return { state: 'missing-order' }
   const resolvedPaymentId = savedPaymentId || (typeof paymentId === 'string' ? paymentId : null)
   if (typeof resolvedPaymentId !== 'string' || !resolvedPaymentId) {
-    clearPurchaseSession(sessionStorage)
-    return { state: 'cancelled' }
+    return { state: 'retryable-error', error: new Error('결제 번호를 확인할 수 없어 이전 주문을 보관했습니다.') }
   }
   try { sessionStorage?.setItem(PROPERTY_PURCHASE_PAYMENT_SESSION_KEY, resolvedPaymentId) } catch { /* The current confirmation can still proceed. */ }
-  return confirmWithBackend({ api, purchaseId, paymentId: resolvedPaymentId, sessionStorage, retainOnTerminalError })
+  return confirmWithBackend({ api, purchaseId, paymentId: resolvedPaymentId, sessionStorage })
 }

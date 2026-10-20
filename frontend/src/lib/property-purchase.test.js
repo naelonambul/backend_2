@@ -232,6 +232,29 @@ describe('property purchase flow', () => {
     expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-123')
   })
 
+  it('preserves the purchase pair after a non-retryable HTTP verification error', async () => {
+    const api = { confirmPurchase: jest.fn().mockRejectedValue(Object.assign(new Error('invalid confirmation'), { status: 400 })) }
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123', 'property-purchase-payment-id': 'payment-123' })
+
+    const result = await confirmPropertyPurchaseReturn({ api, sessionStorage })
+
+    expect(result.state).toBe('retryable-error')
+    expect(sessionStorage.getItem('property-purchase-id')).toBe('purchase-123')
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-123')
+  })
+
+  it('retains an order and reports recovery when no saved or callback payment id exists', async () => {
+    const api = { confirmPurchase: jest.fn() }
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123' })
+
+    const result = await confirmPropertyPurchaseReturn({ api, sessionStorage })
+
+    expect(result.state).toBe('retryable-error')
+    expect(api.confirmPurchase).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem('property-purchase-id')).toBe('purchase-123')
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBeNull()
+  })
+
   it.each(['pending', 'refund_pending'])('preserves a recoverable %s confirmation state', async (status) => {
     const api = { confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-123', status }) }
     const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123', 'property-purchase-payment-id': 'payment-123' })
