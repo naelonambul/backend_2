@@ -79,11 +79,59 @@ describe('property purchase flow', () => {
     const blocked = await startPropertyPurchase({ propertyIdx: 88, api, portone, storeId: 'store', channelKey: 'channel', redirectUrl: '/return', sessionStorage })
     const returned = await confirmPropertyPurchaseReturn({ api, sessionStorage, paymentId: 'payment-new' })
 
-    expect(blocked.state).toBe('retryable-error')
+    expect(blocked.state).toBe('pending')
     expect(api.createPurchase).not.toHaveBeenCalled()
     expect(portone.requestPayment).not.toHaveBeenCalled()
     expect(api.confirmPurchase).toHaveBeenCalledWith('purchase-old', { payment_id: 'payment-old' })
     expect(returned.state).toBe('pending')
+  })
+
+  it('keeps a new checkout blocked when the backend still reports the saved order pending', async () => {
+    const api = { createPurchase: jest.fn(), confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-old', status: 'pending' }) }
+    const portone = { requestPayment: jest.fn() }
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-old', 'property-purchase-payment-id': 'payment-old' })
+
+    const result = await startPropertyPurchase({ propertyIdx: 88, api, portone, storeId: 'store', channelKey: 'channel', redirectUrl: '/return', sessionStorage })
+
+    expect(api.confirmPurchase).toHaveBeenCalledWith('purchase-old', { payment_id: 'payment-old' })
+    expect(api.createPurchase).not.toHaveBeenCalled()
+    expect(portone.requestPayment).not.toHaveBeenCalled()
+    expect(result.state).toBe('pending')
+    expect(sessionStorage.getItem('property-purchase-id')).toBe('purchase-old')
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-old')
+  })
+
+  it('allows a new order after the backend confirms the previous order was cancelled', async () => {
+    const newOrder = { ...purchaseOrder, purchase_id: 'purchase-new', payment_id: 'payment-new' }
+    const api = {
+      createPurchase: jest.fn().mockResolvedValue(newOrder),
+      confirmPurchase: jest.fn()
+        .mockResolvedValueOnce({ purchase_id: 'purchase-old', status: 'cancelled' })
+        .mockResolvedValueOnce({ purchase_id: 'purchase-new', status: 'paid' }),
+    }
+    const portone = { requestPayment: jest.fn().mockResolvedValue({ paymentId: 'payment-new' }) }
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-old', 'property-purchase-payment-id': 'payment-old' })
+
+    const result = await startPropertyPurchase({ propertyIdx: 88, api, portone, storeId: 'store', channelKey: 'channel', redirectUrl: '/return', sessionStorage })
+
+    expect(api.confirmPurchase).toHaveBeenNthCalledWith(1, 'purchase-old', { payment_id: 'payment-old' })
+    expect(api.createPurchase).toHaveBeenCalledWith(88)
+    expect(portone.requestPayment).toHaveBeenCalledWith(expect.objectContaining({ paymentId: 'payment-new' }))
+    expect(result).toMatchObject({ state: 'success', status: 'paid' })
+    expect(sessionStorage.values.size).toBe(0)
+  })
+
+  it('retains an unresolved pair when preflight verification fails', async () => {
+    const api = { createPurchase: jest.fn(), confirmPurchase: jest.fn().mockRejectedValue(Object.assign(new Error('verification unavailable'), { status: 400 })) }
+    const portone = { requestPayment: jest.fn() }
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-old', 'property-purchase-payment-id': 'payment-old' })
+
+    const result = await startPropertyPurchase({ propertyIdx: 88, api, portone, storeId: 'store', channelKey: 'channel', redirectUrl: '/return', sessionStorage })
+
+    expect(result.state).toBe('retryable-error')
+    expect(api.createPurchase).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem('property-purchase-id')).toBe('purchase-old')
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-old')
   })
 
   it('retains the paired identifiers when cancellation verification is pending', async () => {
