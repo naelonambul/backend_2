@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     DATABASE_URL: str = "sqlite:///app.db"
     PROPERTY_SELLER_EMAIL: str = ""
+    PROPERTY_SELLER_SECRET: str = ""
     FRONTEND_ORIGIN: str = "http://127.0.0.1:5173"
     BACKEND_ORIGIN: str = "http://127.0.0.1:8000"
     KAKAO_REST_API_KEY: str = ""

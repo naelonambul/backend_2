@@ -73,6 +73,14 @@ def kakao_state_cookie_deletion_header() -> str:
 # 의존성 주입 : DI, 필요한 객체를 우리가 직접 생성하지 않고 외부에서 전달해주는 방식
 @router.post("/signup", response_model=SignUpRes)
 def signup(req: SignUpReq, db: Session = Depends(get_db)):
+    if is_configured_seller(req.email):
+        seller_secret = settings.PROPERTY_SELLER_SECRET
+        if not seller_secret.strip() or req.password != seller_secret:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Seller registration is not authorized",
+            )
+
     # db = SessionLocal()
 
     user = db.scalar(select(User).where(User.email == req.email))
@@ -92,7 +100,13 @@ def signup(req: SignUpReq, db: Session = Depends(get_db)):
 def login(req: LoginReq, res: Response, db: Session = Depends(get_db)):
     # 회원 가입이 되어있는지 아닌지 확인
     user = db.scalar(select(User).where(User.email == req.email))
-    if not user or user.password != req.password:
+    seller_secret = settings.PROPERTY_SELLER_SECRET
+    invalid_seller_secret = (
+        user is not None
+        and is_configured_seller(user.email)
+        and (not seller_secret.strip() or req.password != seller_secret)
+    )
+    if not user or user.password != req.password or invalid_seller_secret:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="이메일 또는 비밀번호가 올바르지 않습니다.",

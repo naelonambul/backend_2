@@ -29,6 +29,7 @@ def client(tmp_path, monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_EMAIL", "seller@example.com")
+    monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_SECRET", "secret")
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -120,6 +121,68 @@ def test_current_user_includes_configured_role(client):
 
     signup_and_login(client, "buyer@example.com", "Buyer")
     assert client.get("/user/me").json()["role"] == "buyer"
+
+
+def test_seller_signup_requires_configured_secret_and_exact_password(client):
+    wrong_password = client.post(
+        "/user/signup",
+        json={"email": "seller@example.com", "password": "wrong", "name": "Seller"},
+    )
+    assert wrong_password.status_code == 403
+
+    accepted = client.post(
+        "/user/signup",
+        json={"email": "seller@example.com", "password": "secret", "name": "Seller"},
+    )
+    assert accepted.status_code == 200
+    assert "password" not in accepted.json()
+    assert client.post(
+        "/user/login", json={"email": "seller@example.com", "password": "secret"}
+    ).status_code == 200
+    assert client.get("/user/me").json()["role"] == "seller"
+
+
+def test_seller_signup_is_rejected_when_configured_secret_is_missing(client, monkeypatch):
+    monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_SECRET", "  ")
+
+    rejected = client.post(
+        "/user/signup",
+        json={"email": "seller@example.com", "password": "secret", "name": "Seller"},
+    )
+    assert rejected.status_code == 403
+
+    monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_SECRET", "secret")
+    accepted = client.post(
+        "/user/signup",
+        json={"email": "seller@example.com", "password": "secret", "name": "Seller"},
+    )
+    assert accepted.status_code == 200
+
+
+def test_buyer_signup_does_not_need_seller_secret(client, monkeypatch):
+    monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_SECRET", "")
+    signup = client.post(
+        "/user/signup",
+        json={"email": "buyer@example.com", "password": "buyer-password", "name": "Buyer"},
+    )
+
+    assert signup.status_code == 200
+    assert client.post(
+        "/user/login", json={"email": "buyer@example.com", "password": "buyer-password"}
+    ).status_code == 200
+    assert client.get("/user/me").json()["role"] == "buyer"
+
+
+def test_seller_login_rejects_old_password_after_secret_changes(client, monkeypatch):
+    client.post(
+        "/user/signup",
+        json={"email": "seller@example.com", "password": "secret", "name": "Seller"},
+    )
+    monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_SECRET", "rotated-secret")
+
+    assert client.post(
+        "/user/login", json={"email": "seller@example.com", "password": "secret"}
+    ).status_code == 401
 
 
 @pytest.mark.parametrize(
