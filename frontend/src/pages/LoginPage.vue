@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { createApiClient } from '../api'
 import { beginKakaoLogin } from '../auth/kakao'
 import { getCurrentUserOrNull } from '../auth/session'
+import { getSafeRedirectTarget } from '../auth/redirect'
 
 const route = useRoute()
+const router = useRouter()
 const api = createApiClient()
 const form = ref({ email: '', password: '' })
 const currentUser = ref(null)
@@ -18,7 +20,11 @@ const error = ref('')
 const justCreated = computed(() => route.query.created === '1')
 
 onMounted(async () => {
-  try { currentUser.value = await getCurrentUserOrNull(api) }
+  try {
+    currentUser.value = await getCurrentUserOrNull(api)
+    const redirectTarget = getSafeRedirectTarget(route.query.redirect)
+    if (currentUser.value && redirectTarget) await router.replace(redirectTarget)
+  }
   catch (requestError) { sessionError.value = requestError.message || '로그인 상태를 확인하지 못했습니다.' }
   finally { sessionLoading.value = false }
 })
@@ -26,7 +32,12 @@ onMounted(async () => {
 async function submitLogin() {
   error.value = ''
   submitting.value = true
-  try { await api.login(form.value); currentUser.value = await api.getCurrentUser() }
+  try {
+    await api.login(form.value)
+    currentUser.value = await api.getCurrentUser()
+    const redirectTarget = getSafeRedirectTarget(route.query.redirect)
+    if (redirectTarget) await router.push(redirectTarget)
+  }
   catch (requestError) { error.value = requestError.message || '로그인하지 못했습니다.' }
   finally { submitting.value = false }
 }
@@ -43,10 +54,20 @@ async function submitKakaoLogin() {
   error.value = ''
   kakaoSubmitting.value = true
   try {
+    const redirectTarget = getSafeRedirectTarget(route.query.redirect)
+    try {
+      if (redirectTarget) window.sessionStorage.setItem('haven-login-redirect', redirectTarget)
+      else window.sessionStorage.removeItem('haven-login-redirect')
+    } catch {
+      // Storage may be unavailable; Kakao login still works without a return path.
+    }
     const frontendOrigin = typeof __FRONTEND_ORIGIN__ !== 'undefined' ? __FRONTEND_ORIGIN__ : window.location.origin
     const redirectUri = import.meta.env.VITE_KAKAO_REDIRECT_URI || `${frontendOrigin}/auth/kakao/callback`
     await beginKakaoLogin({ sdk: window.Kakao, javascriptKey: import.meta.env.VITE_KAKAO_JAVASCRIPT_KEY, redirectUri, api })
-  } catch (requestError) { error.value = requestError.message || '카카오 로그인을 시작하지 못했습니다.' }
+  } catch (requestError) {
+    try { window.sessionStorage.removeItem('haven-login-redirect') } catch { /* Ignore unavailable storage. */ }
+    error.value = requestError.message || '카카오 로그인을 시작하지 못했습니다.'
+  }
   finally { kakaoSubmitting.value = false }
 }
 </script>

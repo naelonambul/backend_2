@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { createApiClient } from '../api'
 import { exchangeKakaoCode, getKakaoCallbackError } from '../auth/kakao'
+import { getSafeRedirectTarget } from '../auth/redirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,7 +19,14 @@ onMounted(async () => {
       state: typeof route.query.state === 'string' ? route.query.state : '',
       api: createApiClient(),
     })
-    await router.replace({ name: 'login' })
+    let redirectTarget = null
+    try {
+      redirectTarget = getSafeRedirectTarget(window.sessionStorage.getItem('haven-login-redirect'))
+      window.sessionStorage.removeItem('haven-login-redirect')
+    } catch {
+      // Continue to the login page when session storage is unavailable.
+    }
+    await router.replace(redirectTarget || { name: 'login' })
   } catch (requestError) {
     error.value = requestError.message || '카카오 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.'
   }
