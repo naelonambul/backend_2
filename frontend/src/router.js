@@ -6,6 +6,7 @@ const router = createRouter({
     { path: '/', redirect: { name: 'property-list' } },
     { path: '/properties', name: 'property-list', component: () => import('./pages/PropertyListPage.vue') },
     { path: '/properties/new', name: 'property-create', component: () => import('./pages/PropertyCreatePage.vue') },
+    { path: '/properties/purchase/return', name: 'property-purchase-return', component: () => import('./pages/PropertyPurchaseReturnPage.vue') },
     { path: '/properties/:idx', name: 'property-detail', component: () => import('./pages/PropertyDetailPage.vue') },
     { path: '/boards', name: 'board-list', component: () => import('./pages/BoardListPage.vue') },
     { path: '/boards/new', name: 'board-create', component: () => import('./pages/BoardCreatePage.vue') },

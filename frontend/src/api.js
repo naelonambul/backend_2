@@ -79,5 +79,9 @@ export function createApiClient(baseUrl = getConfiguredBaseUrl(), fetchImpl) {
     listProperties: () => request('/properties'),
     readProperty: (idx) => request('/properties/' + encodeURIComponent(idx)),
     registerProperty: (data) => request('/properties', { method: 'POST', body: data }),
+    createPurchase: (propertyIdx) => request('/properties/' + encodeURIComponent(propertyIdx) + '/purchases', { method: 'POST' }),
+    confirmPurchase: (purchaseId, payload) => request('/purchases/' + encodeURIComponent(purchaseId) + '/confirm', { method: 'POST', body: payload }),
+    createPurchase: (propertyIdx) => request('/properties/' + encodeURIComponent(propertyIdx) + '/purchases', { method: 'POST' }),
+    confirmPurchase: (purchaseId, payload) => request('/purchases/' + encodeURIComponent(purchaseId) + '/confirm', { method: 'POST', body: payload }),
   }
 }
