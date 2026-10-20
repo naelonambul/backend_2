@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { createApiClient } from '../api'
-import { filterNotes, getCollectionCounts, getExcerpt, noteTone } from '../lib/notes'
+import { createApiClient } from '../api/api.js'
+import { filterNotes, getCollectionCounts, getExcerpt, noteTone } from '../stores/notes.js'
 
 const boards = ref([])
 const loading = ref(true)

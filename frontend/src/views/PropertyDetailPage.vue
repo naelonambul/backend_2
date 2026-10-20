@@ -1,11 +1,11 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { createApiClient } from '../api'
-import { getCurrentUserOrNull } from '../auth/session'
-import { formatArea, formatPrice } from '../lib/property-view'
-import PortOne from '../lib/portone'
-import { canRetryPropertyPurchase, canStartPropertyPurchase, confirmPropertyPurchaseReturn, startPropertyPurchase } from '../lib/property-purchase'
+import { createApiClient } from '../api/api.js'
+import { getCurrentUserOrNull } from '../stores/auth/session.js'
+import { formatArea, formatPrice } from '../stores/property/view.js'
+import PortOne from '../stores/property/portone.js'
+import { canRetryPropertyPurchase, canStartPropertyPurchase, confirmPropertyPurchaseReturn, startPropertyPurchase } from '../stores/property/purchase.js'
 
 const route = useRoute()
 const api = createApiClient()

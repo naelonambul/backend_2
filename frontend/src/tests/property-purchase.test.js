@@ -1,10 +1,10 @@
-import { createApiClient } from '../api'
+import { createApiClient } from '../api/api'
 import {
   canStartPropertyPurchase,
   canRetryPropertyPurchase,
   confirmPropertyPurchaseReturn,
   startPropertyPurchase,
-} from './property-purchase'
+} from '../stores/property/purchase'
 
 const purchaseOrder = {
   purchase_id: 'purchase-123',

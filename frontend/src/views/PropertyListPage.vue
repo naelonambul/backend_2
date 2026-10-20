@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { createApiClient } from '../api'
-import { formatArea, formatPrice, getPropertyListState } from '../lib/property-view'
+import { createApiClient } from '../api/api.js'
+import { formatArea, formatPrice, getPropertyListState } from '../stores/property/view.js'
 
 const api = createApiClient()
 const properties = ref([])

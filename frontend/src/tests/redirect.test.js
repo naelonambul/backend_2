@@ -1,4 +1,4 @@
-import { getSafeRedirectTarget } from './redirect'
+import { getSafeRedirectTarget } from '../stores/auth/redirect'
 
 describe('safe internal redirect targets', () => {
   it('keeps a same-origin path and its query and hash', () => {

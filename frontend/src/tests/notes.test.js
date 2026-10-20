@@ -1,4 +1,4 @@
-import { filterNotes, getCollectionCounts, getExcerpt, noteTone, SHORT_NOTE_LIMIT } from './notes'
+import { filterNotes, getCollectionCounts, getExcerpt, noteTone, SHORT_NOTE_LIMIT } from '../stores/notes'
 
 const notes = [
   { idx: 2, title: '바다', contents: '파도 소리를 오래 들었다.' },

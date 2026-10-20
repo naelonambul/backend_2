@@ -1,8 +1,8 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { createApiClient } from '../api'
-import { confirmPropertyPurchaseReturn } from '../lib/property-purchase'
+import { createApiClient } from '../api/api.js'
+import { confirmPropertyPurchaseReturn } from '../stores/property/purchase.js'
 
 const route = useRoute()
 const api = createApiClient()

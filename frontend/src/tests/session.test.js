@@ -1,4 +1,4 @@
-import { getCurrentUserOrNull } from './session'
+import { getCurrentUserOrNull } from '../stores/auth/session'
 
 describe('login session helper', () => {
   it('returns the current profile when the session is valid', async () => {

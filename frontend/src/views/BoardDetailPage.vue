@@ -1,8 +1,8 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { createApiClient } from '../api'
-import { noteTone } from '../lib/notes'
+import { createApiClient } from '../api/api.js'
+import { noteTone } from '../stores/notes.js'
 
 const route = useRoute()
 const board = ref(null)

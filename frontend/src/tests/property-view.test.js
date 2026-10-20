@@ -1,10 +1,10 @@
-﻿import {
+import {
   formatArea,
   formatPrice,
   getPropertyListState,
   getSellerAccessState,
   validatePropertyForm,
-} from './property-view'
+} from '../stores/property/view'
 
 const validListing = {
   title: 'Sunny apartment',

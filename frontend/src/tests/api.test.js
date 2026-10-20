@@ -1,4 +1,4 @@
-import { ApiError, createApiClient, getConfiguredBaseUrl, normalizeBaseUrl } from './api'
+import { ApiError, createApiClient, getConfiguredBaseUrl, normalizeBaseUrl } from '../api/api'
 
 function makeResponse(status, payload) {
   return {

@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { createApiClient } from '../api'
-import { getCurrentUserOrNull } from '../auth/session'
-import { getSellerAccessState, validatePropertyForm } from '../lib/property-view'
+import { createApiClient } from '../api/api.js'
+import { getCurrentUserOrNull } from '../stores/auth/session.js'
+import { getSellerAccessState, validatePropertyForm } from '../stores/property/view.js'
 
 const router = useRouter()
 const api = createApiClient()

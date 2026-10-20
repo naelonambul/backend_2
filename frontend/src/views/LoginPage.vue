@@ -1,10 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { createApiClient } from '../api'
-import { beginKakaoLogin } from '../auth/kakao'
-import { getCurrentUserOrNull } from '../auth/session'
-import { getSafeRedirectTarget } from '../auth/redirect'
+import { createApiClient } from '../api/api.js'
+import { beginKakaoLogin } from '../stores/auth/kakao.js'
+import { getCurrentUserOrNull } from '../stores/auth/session.js'
+import { getSafeRedirectTarget } from '../stores/auth/redirect.js'
 
 const route = useRoute()
 const router = useRouter()

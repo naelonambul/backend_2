@@ -1,4 +1,4 @@
-import { beginKakaoLogin, getKakaoCallbackError, exchangeKakaoCode } from './kakao'
+import { beginKakaoLogin, getKakaoCallbackError, exchangeKakaoCode } from '../stores/auth/kakao'
 
 describe('Kakao login helpers', () => {
   it('initializes the SDK, obtains a one-time state, then starts authorization', async () => {

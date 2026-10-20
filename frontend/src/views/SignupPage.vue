@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { createApiClient } from '../api'
+import { createApiClient } from '../api/api.js'
 
 const router = useRouter()
 const form = ref({ name: '', email: '', password: '' })
