@@ -31,19 +31,19 @@ export function validatePropertyForm(data) {
   const rooms = String(data.room_count ?? '').trim()
   const imageUrl = String(data.image_url ?? '').trim()
 
-  if (!title || title.length > 200) errors.title = 'Enter a title between 1 and 200 characters.'
-  if (!address || address.length > 300) errors.address = 'Enter an address between 1 and 300 characters.'
-  if (!description || description.length > 5000) errors.description = 'Enter a description between 1 and 5000 characters.'
-  if (!/^\d+$/.test(price)) errors.price_krw = 'Price must be a non-negative whole number.'
-  if (!area || !Number.isFinite(Number(area)) || Number(area) <= 0) errors.area_m2 = 'Area must be greater than zero.'
-  if (!/^\d+$/.test(rooms)) errors.room_count = 'Room count must be a non-negative whole number.'
+  if (!title || title.length > 200) errors.title = '제목을 1자 이상 200자 이하로 입력해 주세요.'
+  if (!address || address.length > 300) errors.address = '주소를 1자 이상 300자 이하로 입력해 주세요.'
+  if (!description || description.length > 5000) errors.description = '매물 설명을 1자 이상 5000자 이하로 입력해 주세요.'
+  if (!/^\d+$/.test(price)) errors.price_krw = '매매가는 0 이상의 정수로 입력해 주세요.'
+  if (!area || !Number.isFinite(Number(area)) || Number(area) <= 0) errors.area_m2 = '면적은 0보다 큰 숫자로 입력해 주세요.'
+  if (!/^\d+$/.test(rooms)) errors.room_count = '방 개수는 0 이상의 정수로 입력해 주세요.'
 
   if (imageUrl) {
     try {
       const parsedUrl = new URL(imageUrl)
       if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('Invalid protocol')
     } catch {
-      errors.image_url = 'Enter a valid HTTP or HTTPS image URL.'
+      errors.image_url = 'HTTP 또는 HTTPS 형식의 사진 주소를 입력해 주세요.'
     }
   }
 
