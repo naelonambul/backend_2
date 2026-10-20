@@ -7,21 +7,32 @@ from app.db.database import get_db
 from app.models.property import Property
 from app.models.user import User
 from app.schemas.property import PropertyCreate, PropertyRead
-from app.models.purchase import Purchase
+from app.models.payment_reconciliation import PaymentReconciliation
+from app.models.purchase import Purchase, utc_now
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
 
 def _property_response(property_record: Property, db: Session):
+    now = utc_now()
     active = db.scalars(
         select(Purchase.status).where(
             Purchase.property_idx == property_record.idx,
-            Purchase.status.in_(("pending", "paid", "refund_pending")),
+            (
+                Purchase.status.in_(("paid", "refund_pending"))
+                | ((Purchase.status == "pending") & (Purchase.expires_at > now))
+            ),
         )
     ).all()
+    # Reconciliation is keyed by purchase, so query by the property through its purchase.
+    has_reconciliation = db.scalar(
+        select(PaymentReconciliation.purchase_id)
+        .join(Purchase, Purchase.purchase_id == PaymentReconciliation.purchase_id)
+        .where(Purchase.property_idx == property_record.idx)
+    ) is not None
     if "paid" in active:
         availability = "sold"
-    elif active:
+    elif active or has_reconciliation:
         availability = "reserved"
     else:
         availability = "available"

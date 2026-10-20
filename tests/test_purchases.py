@@ -178,10 +178,35 @@ def test_expired_pending_purchase_releases_property(client):
         old.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
         db.commit()
 
+    assert client.get(f"/properties/{property_item['idx']}").json()["availability"] == "available"
+    assert client.get("/properties").json()[0]["availability"] == "available"
+
     second = create_purchase(client, property_item["idx"], "second@example.com")
 
     assert second.status_code == 200
     assert purchase_record(client, first.json()["purchase_id"]).status == "cancelled"
+
+
+@pytest.mark.parametrize("reported_status", ["FAILED", "CANCELLED"])
+def test_mismatched_portone_payment_id_does_not_change_terminal_payment_state(
+    client, reported_status
+):
+    property_item = create_property(client)
+    order_response = create_purchase(client, property_item["idx"])
+    order = order_response.json()
+    client.portone.payment = payment_for(
+        order, status=reported_status, payment_id="different-payment-id"
+    )
+    client.cookies.clear()
+    login(client, "buyer@example.com")
+
+    response = client.post(
+        f"/purchases/{order['purchase_id']}/confirm", json={"payment_id": order["payment_id"]}
+    )
+
+    assert response.status_code == 502
+    assert purchase_record(client, order["purchase_id"]).status == "pending"
+    assert client.get(f"/properties/{property_item['idx']}").json()["availability"] == "reserved"
 
 
 def test_zero_price_property_cannot_be_purchased(client):
@@ -335,3 +360,59 @@ def test_late_paid_order_is_cancelled_or_kept_refund_pending(client, cancel_fail
     assert response.status_code == 200
     assert response.json()["status"] == ("refund_pending" if cancel_fails else "cancelled")
     assert client.portone.cancellations == [(order["payment_id"], "Late or conflicting payment")]
+
+
+def test_conflicting_late_paid_capture_does_not_cancel_competing_buyer_order(client):
+    property_item = create_property(client)
+    stale_response = create_purchase(client, property_item["idx"], "stale-buyer@example.com")
+    stale_order = stale_response.json()
+    Purchase = importlib.import_module("app.models.purchase").Purchase
+    with client.db_factory() as db:
+        stale = db.scalar(
+            select(Purchase).where(Purchase.purchase_id == stale_order["purchase_id"])
+        )
+        stale.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.commit()
+
+    competing_response = create_purchase(client, property_item["idx"], "current-buyer@example.com")
+    assert competing_response.status_code == 200
+    competing_order = competing_response.json()
+    client.portone.payment = payment_for(stale_order)
+    client.portone.cancel_error = importlib.import_module("app.services.portone").PortOneError(
+        "cancel failed", retryable=True
+    )
+    client.cookies.clear()
+    login(client, "stale-buyer@example.com")
+
+    response = client.post(
+        f"/purchases/{stale_order['purchase_id']}/confirm",
+        json={"payment_id": stale_order["payment_id"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "refund_pending"
+    assert purchase_record(client, competing_order["purchase_id"]).status == "pending"
+    assert purchase_record(client, stale_order["purchase_id"]).status == "cancelled"
+    Reconciliation = importlib.import_module("app.models.payment_reconciliation").PaymentReconciliation
+    with client.db_factory() as db:
+        recovery = db.get(Reconciliation, stale_order["purchase_id"])
+        assert recovery is not None
+        assert recovery.payment_id == stale_order["payment_id"]
+        assert recovery.status == "refund_pending"
+        active = db.scalars(
+            select(Purchase).where(
+                Purchase.property_idx == property_item["idx"],
+                Purchase.status.in_(("pending", "paid", "refund_pending")),
+            )
+        ).all()
+        assert [order.purchase_id for order in active] == [competing_order["purchase_id"]]
+
+    client.portone.cancel_error = None
+    response = client.post(
+        f"/purchases/{stale_order['purchase_id']}/confirm",
+        json={"payment_id": stale_order["payment_id"]},
+    )
+    assert response.json()["status"] == "cancelled"
+    with client.db_factory() as db:
+        assert db.get(Reconciliation, stale_order["purchase_id"]) is None
+    assert purchase_record(client, competing_order["purchase_id"]).status == "pending"

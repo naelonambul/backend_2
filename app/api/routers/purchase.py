@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.db.database import get_db
 from app.models.property import Property
 from app.models.purchase import Purchase, utc_now
+from app.models.payment_reconciliation import PaymentReconciliation
 from app.models.user import User
 from app.schemas.purchase import (
     PurchaseConfirmRequest,
@@ -20,7 +21,6 @@ from app.schemas.purchase import (
 from app.services.portone import PortOneClient, PortOneError
 
 router = APIRouter(tags=["purchases"])
-ACTIVE_STATUSES = ("pending", "paid", "refund_pending")
 PENDING_LIFETIME = timedelta(minutes=15)
 
 
@@ -38,8 +38,12 @@ def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-def _confirm_response(purchase: Purchase):
-    return {"purchase_id": purchase.purchase_id, "status": purchase.status}
+def _confirm_response(purchase: Purchase, db: Session):
+    unresolved = db.get(PaymentReconciliation, purchase.purchase_id) is not None
+    return {
+        "purchase_id": purchase.purchase_id,
+        "status": "refund_pending" if unresolved else purchase.status,
+    }
 
 
 @router.post(
@@ -77,10 +81,18 @@ def create_purchase(
         active = db.scalar(
             select(Purchase).where(
                 Purchase.property_idx == property_idx,
-                Purchase.status.in_(ACTIVE_STATUSES),
+                (
+                    Purchase.status.in_(("paid", "refund_pending"))
+                    | ((Purchase.status == "pending") & (Purchase.expires_at > now))
+                ),
             )
         )
-        if active:
+        unresolved_reconciliation = db.scalar(
+            select(PaymentReconciliation.purchase_id)
+            .join(Purchase, Purchase.purchase_id == PaymentReconciliation.purchase_id)
+            .where(Purchase.property_idx == property_idx)
+        )
+        if active or unresolved_reconciliation:
             raise HTTPException(status_code=409, detail="Property is already reserved or sold")
 
         order = Purchase(
@@ -134,7 +146,7 @@ def confirm_purchase(
     if request.payment_id != order.payment_id:
         raise HTTPException(status_code=400, detail="Payment ID does not match purchase")
     if order.status == "paid":
-        return _confirm_response(order)
+        return _confirm_response(order, db)
 
     try:
         payment = portone.get_payment(order.payment_id)
@@ -145,18 +157,22 @@ def confirm_purchase(
         ) from exc
 
     payment_status = str(payment.get("status", "")).upper()
+    if payment.get("id") != order.payment_id:
+        raise HTTPException(status_code=502, detail="Payment identity could not be verified")
+    reconciliation = db.get(PaymentReconciliation, order.purchase_id)
     if payment_status in {"FAILED", "CANCELLED"}:
+        if reconciliation:
+            db.delete(reconciliation)
         order.status = "failed" if payment_status == "FAILED" else "cancelled"
         order.updated_at = utc_now()
         db.commit()
-        return _confirm_response(order)
+        return _confirm_response(order, db)
     if payment_status != "PAID":
-        return _confirm_response(order)
+        return _confirm_response(order, db)
 
     amount = payment.get("amount")
     valid_payment = (
-        payment.get("id") == order.payment_id
-        and isinstance(amount, dict)
+        isinstance(amount, dict)
         and type(amount.get("total")) is int
         and amount.get("total") == order.amount_krw
         and payment.get("currency") == order.currency
@@ -167,7 +183,10 @@ def confirm_purchase(
         select(Purchase).where(
             Purchase.property_idx == order.property_idx,
             Purchase.purchase_id != order.purchase_id,
-            Purchase.status.in_(ACTIVE_STATUSES),
+            (
+                Purchase.status.in_(("paid", "refund_pending"))
+                | ((Purchase.status == "pending") & (Purchase.expires_at > now))
+            ),
         )
     )
     if valid_payment and unexpired and order.status == "pending" and not competing:
@@ -175,24 +194,39 @@ def confirm_purchase(
         order.paid_at = now
         order.updated_at = now
         db.commit()
-        return _confirm_response(order)
+        return _confirm_response(order, db)
 
     try:
         cancellation = portone.cancel_payment(order.payment_id, "Late or conflicting payment")
         if cancellation.get("cancellation", {}).get("status") != "SUCCEEDED":
             raise PortOneError("Payment cancellation is not complete", retryable=True)
         order.status = "cancelled" if (not unexpired or order.status != "pending") else "failed"
+        if reconciliation:
+            db.delete(reconciliation)
     except PortOneError:
-        # A stale pending order may coexist with a newer reservation; evict a pending
-        # reservation so the unresolved captured payment can be represented safely.
-        if competing and competing.status == "pending":
-            competing.status = "cancelled"
-            competing.updated_at = now
-        order.status = "refund_pending"
+        if reconciliation is None:
+            reconciliation = PaymentReconciliation(
+                purchase_id=order.purchase_id,
+                payment_id=order.payment_id,
+                status="refund_pending",
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(reconciliation)
+        else:
+            reconciliation.updated_at = now
+        # The recovery record is separate from the unique property reservation.
+        # Keep the competing buyer's order untouched; only retain refund_pending on
+        # this purchase when doing so does not violate the one-active-order index.
+        if competing:
+            if order.status == "pending":
+                order.status = "cancelled"
+        else:
+            order.status = "refund_pending"
     order.updated_at = now
     try:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Conflicting payment requires reconciliation") from exc
-    return _confirm_response(order)
+    return _confirm_response(order, db)

@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.social_account import SocialAccount
 from app.models.property import Property
 from app.models.purchase import Purchase
+from app.models.payment_reconciliation import PaymentReconciliation
 from app.core.config import settings
 
 app = FastAPI(title="노트 API", version="0.1.0")
