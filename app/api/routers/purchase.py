@@ -163,7 +163,7 @@ def confirm_purchase(
     expired_pending = (
         order.status == "pending" and _as_utc(order.expires_at) <= utc_now()
     )
-    if expired_pending and payment_status != "PAID":
+    if expired_pending and payment_status not in {"PAID", "PARTIAL_CANCELLED"}:
         if reconciliation:
             db.delete(reconciliation)
         order.status = "cancelled"
@@ -193,7 +193,7 @@ def confirm_purchase(
                 status_code=503, detail="Payment result could not be persisted"
             ) from exc
         return _confirm_response(order, db)
-    if payment_status != "PAID":
+    if payment_status not in {"PAID", "PARTIAL_CANCELLED"}:
         return _confirm_response(order, db)
 
     amount = payment.get("amount")
@@ -215,7 +215,13 @@ def confirm_purchase(
             ),
         )
     )
-    if valid_payment and unexpired and order.status == "pending" and not competing:
+    if (
+        payment_status == "PAID"
+        and valid_payment
+        and unexpired
+        and order.status == "pending"
+        and not competing
+    ):
         order.status = "paid"
         order.paid_at = now
         order.updated_at = now
@@ -259,7 +265,11 @@ def confirm_purchase(
         cancellation = portone.cancel_payment(order.payment_id, "Late or conflicting payment")
         if cancellation.get("cancellation", {}).get("status") != "SUCCEEDED":
             raise PortOneError("Payment cancellation is not complete", retryable=True)
-        order.status = "cancelled" if (not unexpired or order.status != "pending") else "failed"
+        order.status = (
+            "cancelled"
+            if payment_status == "PARTIAL_CANCELLED" or not unexpired or order.status != "pending"
+            else "failed"
+        )
         if reconciliation:
             db.delete(reconciliation)
     except PortOneError:

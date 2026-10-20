@@ -523,3 +523,43 @@ def test_expired_order_with_non_paid_payment_status_releases_reservation(client,
     assert response.json()["status"] == "cancelled"
     assert purchase_record(client, order["purchase_id"]).status == "cancelled"
     assert client.get(f"/properties/{property_item['idx']}").json()["availability"] == "available"
+
+
+@pytest.mark.parametrize("expired", [False, True])
+@pytest.mark.parametrize("cancel_fails", [False, True])
+def test_partial_cancelled_payment_is_cancelled_or_reconciled(
+    client, expired, cancel_fails
+):
+    property_item = create_property(client)
+    order = create_purchase(client, property_item["idx"]).json()
+    Purchase = importlib.import_module("app.models.purchase").Purchase
+    with client.db_factory() as db:
+        record = db.get(Purchase, order["purchase_id"])
+        if expired:
+            record.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.commit()
+    client.portone.payment = payment_for(order, status="PARTIAL_CANCELLED")
+    if cancel_fails:
+        client.portone.cancel_error = importlib.import_module("app.services.portone").PortOneError(
+            "remaining payment cancellation failed", retryable=True
+        )
+    client.cookies.clear()
+    login(client, "buyer@example.com")
+
+    response = client.post(
+        f"/purchases/{order['purchase_id']}/confirm", json={"payment_id": order["payment_id"]}
+    )
+
+    expected = "refund_pending" if cancel_fails else "cancelled"
+    assert response.status_code == 200
+    assert response.json()["status"] == expected
+    assert client.portone.cancellations == [
+        (order["payment_id"], "Late or conflicting payment")
+    ]
+    assert purchase_record(client, order["purchase_id"]).status == expected
+    Reconciliation = importlib.import_module("app.models.payment_reconciliation").PaymentReconciliation
+    with client.db_factory() as db:
+        assert (db.get(Reconciliation, order["purchase_id"]) is not None) == cancel_fails
+    assert client.get(f"/properties/{property_item['idx']}").json()["availability"] == (
+        "reserved" if cancel_fails else "available"
+    )
