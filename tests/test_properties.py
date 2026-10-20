@@ -142,6 +142,27 @@ def test_seller_signup_requires_configured_secret_and_exact_password(client):
     assert client.get("/user/me").json()["role"] == "seller"
 
 
+def test_seller_signup_deduplicates_case_variants_and_login_resolves_them(client):
+    created = client.post(
+        "/user/signup",
+        json={"email": "SELLER@EXAMPLE.COM", "password": "secret", "name": "Seller"},
+    )
+    assert created.status_code == 200
+    assert created.json()["email"] == "seller@example.com"
+
+    duplicate = client.post(
+        "/user/signup",
+        json={"email": "Seller@Example.com", "password": "secret", "name": "Second"},
+    )
+    assert duplicate.status_code == 400
+
+    login = client.post(
+        "/user/login", json={"email": " SELLER@EXAMPLE.COM ", "password": "secret"}
+    )
+    assert login.status_code == 200
+    assert client.get("/user/me").json()["email"] == "seller@example.com"
+
+
 def test_seller_signup_is_rejected_when_configured_secret_is_missing(client, monkeypatch):
     monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_SECRET", "  ")
 

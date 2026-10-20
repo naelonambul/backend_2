@@ -16,7 +16,7 @@ from app.core.security import createToken
 from app.models.user import User
 from app.models.social_account import SocialAccount
 from app.services.kakao_oauth import KakaoOAuthError, KakaoOAuthService, get_kakao_oauth_service
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.core.config import settings
@@ -73,33 +73,48 @@ def kakao_state_cookie_deletion_header() -> str:
 # 의존성 주입 : DI, 필요한 객체를 우리가 직접 생성하지 않고 외부에서 전달해주는 방식
 @router.post("/signup", response_model=SignUpRes)
 def signup(req: SignUpReq, db: Session = Depends(get_db)):
-    if is_configured_seller(req.email):
+    is_seller_signup = is_configured_seller(req.email)
+    account_email = req.email
+    if is_seller_signup:
         seller_secret = settings.PROPERTY_SELLER_SECRET
         if not seller_secret.strip() or req.password != seller_secret:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Seller registration is not authorized",
             )
+        account_email = settings.PROPERTY_SELLER_EMAIL.strip()
 
-    # db = SessionLocal()
-
-    user = db.scalar(select(User).where(User.email == req.email))
+    user_query = select(User).where(User.email == account_email)
+    if is_seller_signup:
+        user_query = select(User).where(
+            func.lower(func.trim(User.email))
+            == settings.PROPERTY_SELLER_EMAIL.strip().casefold()
+        )
+    user = db.scalar(user_query)
     if user:
         print("중복 가입")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이미 가입된 이메일입니다.")
 
 
-    newUser = User(
-        email=req.email, password=req.password, name=req.name
-    )
+    newUser = User(email=account_email, password=req.password, name=req.name)
     db.add(newUser)
     db.commit()
-    return req
+    return {"email": account_email, "name": req.name}
 
 @router.post("/login", response_model=LoginRes)
 def login(req: LoginReq, res: Response, db: Session = Depends(get_db)):
     # 회원 가입이 되어있는지 아닌지 확인
-    user = db.scalar(select(User).where(User.email == req.email))
+    if is_configured_seller(req.email):
+        user = db.scalar(
+            select(User)
+            .where(
+                func.lower(func.trim(User.email))
+                == settings.PROPERTY_SELLER_EMAIL.strip().casefold()
+            )
+            .order_by(User.idx)
+        )
+    else:
+        user = db.scalar(select(User).where(User.email == req.email))
     seller_secret = settings.PROPERTY_SELLER_SECRET
     invalid_seller_secret = (
         user is not None
