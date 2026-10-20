@@ -1,6 +1,5 @@
 import secrets
 
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from app.schemas.user import (
     KakaoCallbackReq,
@@ -21,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.core.config import settings
+from app.api.dependencies import get_current_user, is_configured_seller
 
 router = APIRouter(prefix="/user", tags=["user"])
 
@@ -33,24 +33,7 @@ def unauthorized_session() -> HTTPException:
 
 
 @router.get("/me", response_model=CurrentUserRes)
-def current_user(request: Request, db: Session = Depends(get_db)):
-    token = request.cookies.get("EN_AT")
-    if not token:
-        raise unauthorized_session()
-
-    try:
-        claims = jwt.decode(
-            token,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM],
-        )
-        user_idx = int(claims["sub"])
-    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError):
-        raise unauthorized_session()
-
-    user = db.get(User, user_idx)
-    if not user:
-        raise unauthorized_session()
+def current_user(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
 
     social_account = db.scalar(
         select(SocialAccount).where(SocialAccount.user_idx == user.idx)
@@ -59,6 +42,7 @@ def current_user(request: Request, db: Session = Depends(get_db)):
         "name": user.name,
         "email": user.email,
         "provider": social_account.provider if social_account else "email",
+        "role": "seller" if is_configured_seller(user.email) else "buyer",
     }
 
 

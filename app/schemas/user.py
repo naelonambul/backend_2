@@ -38,6 +38,7 @@ class CurrentUserRes(BaseModel):
     name: str
     email: str | None
     provider: str
+    role: str
 
 
 class LogoutRes(BaseModel):

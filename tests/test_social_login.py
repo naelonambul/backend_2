@@ -164,6 +164,7 @@ def test_current_user_returns_password_account_profile(client):
         "name": "Reader",
         "email": "reader@example.com",
         "provider": "email",
+        "role": "buyer",
     }
 
 
@@ -178,6 +179,7 @@ def test_current_user_returns_kakao_account_profile(client):
         "name": client.oauth.profile["nickname"],
         "email": None,
         "provider": "kakao",
+        "role": "buyer",
     }
 
 

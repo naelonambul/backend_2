@@ -6,11 +6,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
-from app.api.routers import user, board
+from app.api.routers import user, board, property
 from app.db.database import Base, engine
 from app.models.board import Board
 from app.models.user import User
 from app.models.social_account import SocialAccount
+from app.models.property import Property
 from app.core.config import settings
 
 app = FastAPI(title="노트 API", version="0.1.0")
@@ -26,6 +27,7 @@ app.add_middleware(
 
 app.include_router(user.router)
 app.include_router(board.router)
+app.include_router(property.router)
 
 Base.metadata.create_all(bind=engine)
 
