@@ -39,8 +39,12 @@ async function confirmWithBackend({ api, purchaseId, paymentId, sessionStorage, 
   }
 }
 
+async function reconcileOrderWithBackend({ api, purchaseId, paymentId, sessionStorage }) {
+  return confirmWithBackend({ api, purchaseId, paymentId, sessionStorage, retainOnTerminalError: true })
+}
+
 async function verifyCancelledOrder({ api, purchaseId, paymentId, sessionStorage }) {
-  const result = await confirmWithBackend({ api, purchaseId, paymentId, sessionStorage, retainOnTerminalError: true })
+  const result = await reconcileOrderWithBackend({ api, purchaseId, paymentId, sessionStorage })
   return result.state === 'failed' ? { ...result, state: 'cancelled' } : result
 }
 
@@ -100,8 +104,7 @@ export async function startPropertyPurchase({
     if (error?.code === 'USER_CANCEL') {
       return verifyCancelledOrder({ api, purchaseId: order.purchase_id, paymentId: order.payment_id, sessionStorage })
     }
-    clearPurchaseSession(sessionStorage)
-    throw error
+    return reconcileOrderWithBackend({ api, purchaseId: order.purchase_id, paymentId: order.payment_id, sessionStorage })
   }
 
   if (response == null) return { state: 'redirecting', purchaseId: order.purchase_id }
@@ -109,17 +112,13 @@ export async function startPropertyPurchase({
     if (response.code === 'USER_CANCEL') {
       return verifyCancelledOrder({ api, purchaseId: order.purchase_id, paymentId: order.payment_id, sessionStorage })
     }
-    clearPurchaseSession(sessionStorage)
-    const error = new Error(response.message || '결제를 진행하지 못했습니다.')
-    error.code = response.code
-    throw error
+    return reconcileOrderWithBackend({ api, purchaseId: order.purchase_id, paymentId: order.payment_id, sessionStorage })
   }
   if (!response.paymentId) {
     return verifyCancelledOrder({ api, purchaseId: order.purchase_id, paymentId: order.payment_id, sessionStorage })
   }
   if (response.paymentId !== order.payment_id) {
-    clearPurchaseSession(sessionStorage)
-    return { state: 'terminal-error', error: new Error('결제 번호가 주문 정보와 일치하지 않습니다.') }
+    return reconcileOrderWithBackend({ api, purchaseId: order.purchase_id, paymentId: order.payment_id, sessionStorage })
   }
   return confirmWithBackend({
     api,

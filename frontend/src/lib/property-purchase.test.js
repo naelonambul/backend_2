@@ -171,6 +171,45 @@ describe('property purchase flow', () => {
     expect(sessionStorage.values.size).toBe(0)
   })
 
+  it('reconciles a thrown SDK error with the server payment id and preserves pending state', async () => {
+    const api = { createPurchase: jest.fn().mockResolvedValue(purchaseOrder), confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-123', status: 'pending' }) }
+    const portone = { requestPayment: jest.fn().mockRejectedValue(new Error('SDK transport failed')) }
+    const sessionStorage = makeStorage()
+
+    const result = await startPropertyPurchase({ propertyIdx: 9, api, portone, storeId: 'store', channelKey: 'channel', redirectUrl: '/return', sessionStorage })
+
+    expect(api.confirmPurchase).toHaveBeenCalledWith('purchase-123', { payment_id: 'payment-123' })
+    expect(result.state).toBe('pending')
+    expect(sessionStorage.getItem('property-purchase-id')).toBe('purchase-123')
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-123')
+  })
+
+  it('uses backend confirmation, not a non-cancel SDK response code, to determine success', async () => {
+    const api = { createPurchase: jest.fn().mockResolvedValue(purchaseOrder), confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-123', status: 'paid' }) }
+    const portone = { requestPayment: jest.fn().mockResolvedValue({ code: 'PAYMENT_DECLINED', message: 'declined' }) }
+    const sessionStorage = makeStorage()
+
+    const result = await startPropertyPurchase({ propertyIdx: 9, api, portone, storeId: 'store', channelKey: 'channel', redirectUrl: '/return', sessionStorage })
+
+    expect(api.confirmPurchase).toHaveBeenCalledWith('purchase-123', { payment_id: 'payment-123' })
+    expect(result).toMatchObject({ state: 'success', status: 'paid' })
+    expect(sessionStorage.values.size).toBe(0)
+  })
+
+  it('ignores a mismatched browser payment id and reconciles only the server payment id', async () => {
+    const api = { createPurchase: jest.fn().mockResolvedValue(purchaseOrder), confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-123', status: 'refund_pending' }) }
+    const portone = { requestPayment: jest.fn().mockResolvedValue({ paymentId: 'payment-from-another-order' }) }
+    const sessionStorage = makeStorage()
+
+    const result = await startPropertyPurchase({ propertyIdx: 9, api, portone, storeId: 'store', channelKey: 'channel', redirectUrl: '/return', sessionStorage })
+
+    expect(api.confirmPurchase).toHaveBeenCalledWith('purchase-123', { payment_id: 'payment-123' })
+    expect(api.confirmPurchase).not.toHaveBeenCalledWith('purchase-123', { payment_id: 'payment-from-another-order' })
+    expect(result.state).toBe('refund_pending')
+    expect(sessionStorage.getItem('property-purchase-id')).toBe('purchase-123')
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-123')
+  })
+
   it('test_return_confirms_with_server_and_clears_session_on_terminal_result', async () => {
     const api = { confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-123', status: 'paid' }) }
     const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123', 'property-purchase-payment-id': 'payment-123' })
