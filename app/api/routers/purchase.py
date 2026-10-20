@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, is_configured_seller
@@ -160,12 +160,38 @@ def confirm_purchase(
     if payment.get("id") != order.payment_id:
         raise HTTPException(status_code=502, detail="Payment identity could not be verified")
     reconciliation = db.get(PaymentReconciliation, order.purchase_id)
+    expired_pending = (
+        order.status == "pending" and _as_utc(order.expires_at) <= utc_now()
+    )
+    if expired_pending and payment_status != "PAID":
+        if reconciliation:
+            db.delete(reconciliation)
+        order.status = "cancelled"
+        order.updated_at = utc_now()
+        try:
+            db.commit()
+        except SQLAlchemyError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=503, detail="Expired purchase could not be finalized"
+            ) from exc
+        return _confirm_response(order, db)
     if payment_status in {"FAILED", "CANCELLED"}:
         if reconciliation:
             db.delete(reconciliation)
-        order.status = "failed" if payment_status == "FAILED" else "cancelled"
+        order.status = (
+            "cancelled"
+            if expired_pending or payment_status == "CANCELLED"
+            else "failed"
+        )
         order.updated_at = utc_now()
-        db.commit()
+        try:
+            db.commit()
+        except SQLAlchemyError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=503, detail="Payment result could not be persisted"
+            ) from exc
         return _confirm_response(order, db)
     if payment_status != "PAID":
         return _confirm_response(order, db)
@@ -193,8 +219,41 @@ def confirm_purchase(
         order.status = "paid"
         order.paid_at = now
         order.updated_at = now
-        db.commit()
-        return _confirm_response(order, db)
+        try:
+            db.commit()
+            return _confirm_response(order, db)
+        except SQLAlchemyError:
+            # A reservation may have been created after the availability query.
+            # Never report a terminal payment state until the database transition
+            # commits; reload and reconcile the externally captured payment.
+            db.rollback()
+            try:
+                db.expire_all()
+                order = db.get(Purchase, purchase_id)
+                if order is None:
+                    raise HTTPException(
+                        status_code=503, detail="Payment reconciliation is unavailable"
+                    )
+                reconciliation = db.get(PaymentReconciliation, order.purchase_id)
+                now = utc_now()
+                unexpired = _as_utc(order.expires_at) > now
+                competing = db.scalar(
+                    select(Purchase).where(
+                        Purchase.property_idx == order.property_idx,
+                        Purchase.purchase_id != order.purchase_id,
+                        (
+                            Purchase.status.in_(("paid", "refund_pending"))
+                            | ((Purchase.status == "pending") & (Purchase.expires_at > now))
+                        ),
+                    )
+                )
+            except HTTPException:
+                raise
+            except SQLAlchemyError as exc:
+                db.rollback()
+                raise HTTPException(
+                    status_code=503, detail="Payment reconciliation is unavailable"
+                ) from exc
 
     try:
         cancellation = portone.cancel_payment(order.payment_id, "Late or conflicting payment")
@@ -226,7 +285,9 @@ def confirm_purchase(
     order.updated_at = now
     try:
         db.commit()
-    except IntegrityError as exc:
+    except SQLAlchemyError as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Conflicting payment requires reconciliation") from exc
+        raise HTTPException(
+            status_code=503, detail="Payment reconciliation could not be persisted"
+        ) from exc
     return _confirm_response(order, db)

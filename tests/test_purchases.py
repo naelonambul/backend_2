@@ -1,10 +1,12 @@
 import importlib
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
@@ -427,3 +429,97 @@ def test_conflicting_late_paid_capture_does_not_cancel_competing_buyer_order(
     with client.db_factory() as db:
         assert db.get(Reconciliation, stale_order["purchase_id"]) is None
     assert purchase_record(client, competing_order["purchase_id"]).status == competing_status
+
+
+def test_paid_transition_race_cancels_or_tracks_capture_after_reservation_is_taken(
+    client, monkeypatch
+):
+    property_item = create_property(client)
+    stale_order = create_purchase(client, property_item["idx"], "stale-buyer@example.com").json()
+    client.portone.payment = payment_for(stale_order)
+    client.portone.cancel_error = importlib.import_module("app.services.portone").PortOneError(
+        "cancel failed", retryable=True
+    )
+    original_commit = SQLAlchemySession.commit
+    interleaved = {"done": False, "competing_id": None}
+    Purchase = importlib.import_module("app.models.purchase").Purchase
+
+    def commit_with_reservation_race(db):
+        paid_order = next(
+            (item for item in db.identity_map.values()
+             if isinstance(item, Purchase) and item.purchase_id == stale_order["purchase_id"]
+             and item.status == "paid"),
+            None,
+        )
+        if paid_order is not None and not interleaved["done"]:
+            interleaved["done"] = True
+            paid_at = paid_order.paid_at
+            db.rollback()
+            with client.db_factory() as other_db:
+                expired = other_db.get(Purchase, stale_order["purchase_id"])
+                expired.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+                expired.status = "cancelled"
+                competing_id = str(uuid.uuid4())
+                other_db.add(Purchase(
+                    purchase_id=competing_id,
+                    payment_id=str(uuid.uuid4()),
+                    property_idx=expired.property_idx,
+                    buyer_user_idx=expired.buyer_user_idx,
+                    amount_krw=expired.amount_krw,
+                    currency=expired.currency,
+                    status="pending",
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
+                    expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+                ))
+                other_db.commit()
+            interleaved["competing_id"] = competing_id
+            paid_order = db.get(Purchase, stale_order["purchase_id"])
+            paid_order.status = "paid"
+            paid_order.paid_at = paid_at
+            paid_order.updated_at = datetime.now(timezone.utc)
+        return original_commit(db)
+
+    monkeypatch.setattr(SQLAlchemySession, "commit", commit_with_reservation_race)
+    client.cookies.clear()
+    login(client, "stale-buyer@example.com")
+
+    response = client.post(
+        f"/purchases/{stale_order['purchase_id']}/confirm",
+        json={"payment_id": stale_order["payment_id"]},
+    )
+
+    assert interleaved["done"] is True
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "refund_pending"
+    assert client.portone.cancellations == [(stale_order["payment_id"], "Late or conflicting payment")]
+    assert purchase_record(client, interleaved["competing_id"]).status == "pending"
+    assert purchase_record(client, stale_order["purchase_id"]).status == "cancelled"
+    Reconciliation = importlib.import_module("app.models.payment_reconciliation").PaymentReconciliation
+    with client.db_factory() as db:
+        recovery = db.get(Reconciliation, stale_order["purchase_id"])
+        assert recovery is not None
+        assert recovery.payment_id == stale_order["payment_id"]
+
+
+@pytest.mark.parametrize("payment_status", ["FAILED", "CANCELLED", "READY"])
+def test_expired_order_with_non_paid_payment_status_releases_reservation(client, payment_status):
+    property_item = create_property(client)
+    order = create_purchase(client, property_item["idx"]).json()
+    Purchase = importlib.import_module("app.models.purchase").Purchase
+    with client.db_factory() as db:
+        record = db.get(Purchase, order["purchase_id"])
+        record.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.commit()
+    client.portone.payment = payment_for(order, status=payment_status)
+    client.cookies.clear()
+    login(client, "buyer@example.com")
+
+    response = client.post(
+        f"/purchases/{order['purchase_id']}/confirm", json={"payment_id": order["payment_id"]}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert purchase_record(client, order["purchase_id"]).status == "cancelled"
+    assert client.get(f"/properties/{property_item['idx']}").json()["availability"] == "available"
