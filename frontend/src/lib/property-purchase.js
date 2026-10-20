@@ -1,7 +1,11 @@
 export const PROPERTY_PURCHASE_SESSION_KEY = 'property-purchase-id'
+export const PROPERTY_PURCHASE_PAYMENT_SESSION_KEY = 'property-purchase-payment-id'
 
 function clearPurchaseSession(sessionStorage) {
-  try { sessionStorage?.removeItem(PROPERTY_PURCHASE_SESSION_KEY) } catch { /* Storage may be unavailable. */ }
+  try {
+    sessionStorage?.removeItem(PROPERTY_PURCHASE_SESSION_KEY)
+    sessionStorage?.removeItem(PROPERTY_PURCHASE_PAYMENT_SESSION_KEY)
+  } catch { /* Storage may be unavailable. */ }
 }
 
 function isRetryable(error) {
@@ -11,6 +15,7 @@ function isRetryable(error) {
 
 function resolveConfirmedPurchase(result, sessionStorage) {
   if (result?.status === 'pending') return { state: 'pending', ...result }
+  if (result?.status === 'refund_pending') return { state: 'refund_pending', ...result }
   clearPurchaseSession(sessionStorage)
   if (result?.status === 'paid') return { state: 'success', ...result }
   return { state: 'failed', ...result }
@@ -31,6 +36,10 @@ export function canStartPropertyPurchase({ role, availability }) {
   return role === 'buyer' && availability === 'available'
 }
 
+export function canRetryPropertyPurchase(state) {
+  return state === 'pending' || state === 'retryable-error' || state === 'refund_pending'
+}
+
 export async function startPropertyPurchase({
   propertyIdx,
   api,
@@ -47,7 +56,7 @@ export async function startPropertyPurchase({
   }
 
   const order = await api.createPurchase(propertyIdx)
-  if (!Number.isInteger(order?.amount) || order.amount <= 0 || order.currency !== 'KRW') {
+  if (!order?.purchase_id || !order?.payment_id || !order?.order_name || !Number.isInteger(order?.amount) || order.amount <= 0 || order.currency !== 'KRW') {
     throw new Error('결제 주문 정보를 확인할 수 없습니다. 매물 가격을 확인해 주세요.')
   }
 
@@ -78,7 +87,15 @@ export async function startPropertyPurchase({
     error.code = response.code
     throw error
   }
-  if (!response.paymentId) return { state: 'retryable-error', error: new Error('결제 결과를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.') }
+  if (!response.paymentId) {
+    clearPurchaseSession(sessionStorage)
+    return { state: 'terminal-error', error: new Error('결제 결과에서 결제 번호를 확인하지 못했습니다.') }
+  }
+  if (response.paymentId !== order.payment_id) {
+    clearPurchaseSession(sessionStorage)
+    return { state: 'terminal-error', error: new Error('결제 번호가 주문 정보와 일치하지 않습니다.') }
+  }
+  sessionStorage.setItem(PROPERTY_PURCHASE_PAYMENT_SESSION_KEY, response.paymentId)
 
   return confirmWithBackend({
     api,
@@ -90,11 +107,17 @@ export async function startPropertyPurchase({
 
 export async function confirmPropertyPurchaseReturn({ api, sessionStorage, paymentId }) {
   let purchaseId = null
-  try { purchaseId = sessionStorage?.getItem(PROPERTY_PURCHASE_SESSION_KEY) } catch { /* Storage may be unavailable. */ }
+  let savedPaymentId = null
+  try {
+    purchaseId = sessionStorage?.getItem(PROPERTY_PURCHASE_SESSION_KEY)
+    savedPaymentId = sessionStorage?.getItem(PROPERTY_PURCHASE_PAYMENT_SESSION_KEY)
+  } catch { /* Storage may be unavailable. */ }
   if (!purchaseId) return { state: 'missing-order' }
-  if (typeof paymentId !== 'string' || !paymentId) {
+  const resolvedPaymentId = savedPaymentId || (typeof paymentId === 'string' ? paymentId : null)
+  if (typeof resolvedPaymentId !== 'string' || !resolvedPaymentId) {
     clearPurchaseSession(sessionStorage)
     return { state: 'cancelled' }
   }
-  return confirmWithBackend({ api, purchaseId, paymentId, sessionStorage })
+  try { sessionStorage?.setItem(PROPERTY_PURCHASE_PAYMENT_SESSION_KEY, resolvedPaymentId) } catch { /* The current confirmation can still proceed. */ }
+  return confirmWithBackend({ api, purchaseId, paymentId: resolvedPaymentId, sessionStorage })
 }

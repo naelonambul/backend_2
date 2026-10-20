@@ -1,6 +1,7 @@
 import { createApiClient } from '../api'
 import {
   canStartPropertyPurchase,
+  canRetryPropertyPurchase,
   confirmPropertyPurchaseReturn,
   startPropertyPurchase,
 } from './property-purchase'
@@ -72,23 +73,86 @@ describe('property purchase flow', () => {
 
   it('test_return_confirms_with_server_and_clears_session_on_terminal_result', async () => {
     const api = { confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-123', status: 'paid' }) }
-    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123' })
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123', 'property-purchase-payment-id': 'payment-123' })
 
     const result = await confirmPropertyPurchaseReturn({ api, sessionStorage, paymentId: 'payment-123' })
 
     expect(api.confirmPurchase).toHaveBeenCalledWith('purchase-123', { payment_id: 'payment-123' })
-    expect(sessionStorage.getItem('property-purchase-id')).toBeNull()
+    expect(sessionStorage.values.size).toBe(0)
     expect(result).toMatchObject({ state: 'success', status: 'paid' })
   })
 
   it('test_return_keeps_session_for_retryable_error', async () => {
     const api = { confirmPurchase: jest.fn().mockRejectedValue(Object.assign(new Error('temporary outage'), { status: 503 })) }
-    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123' })
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123', 'property-purchase-payment-id': 'payment-123' })
 
     const result = await confirmPropertyPurchaseReturn({ api, sessionStorage, paymentId: 'payment-123' })
 
     expect(result.state).toBe('retryable-error')
     expect(sessionStorage.getItem('property-purchase-id')).toBe('purchase-123')
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-123')
+  })
+
+  it.each(['pending', 'refund_pending'])('preserves a recoverable %s confirmation state', async (status) => {
+    const api = { confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-123', status }) }
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123', 'property-purchase-payment-id': 'payment-123' })
+
+    const result = await confirmPropertyPurchaseReturn({ api, sessionStorage })
+
+    expect(result).toMatchObject({ state: status, status })
+    expect(sessionStorage.getItem('property-purchase-id')).toBe('purchase-123')
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-123')
+  })
+
+  it('stores a payment id returned in the redirect query before confirming', async () => {
+    const api = { confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-123', status: 'pending' }) }
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123' })
+
+    await confirmPropertyPurchaseReturn({ api, sessionStorage, paymentId: 'payment-from-return' })
+
+    expect(api.confirmPurchase).toHaveBeenCalledWith('purchase-123', { payment_id: 'payment-from-return' })
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-from-return')
+  })
+
+  it.each(['failed', 'cancelled'])('clears saved identifiers after terminal %s status', async (status) => {
+    const api = { confirmPurchase: jest.fn().mockResolvedValue({ purchase_id: 'purchase-123', status }) }
+    const sessionStorage = makeStorage({ 'property-purchase-id': 'purchase-123', 'property-purchase-payment-id': 'payment-123' })
+
+    const result = await confirmPropertyPurchaseReturn({ api, sessionStorage })
+
+    expect(result.state).toBe('failed')
+    expect(sessionStorage.values.size).toBe(0)
+  })
+
+  it('exposes a retry action for pending, retryable, and refund pending outcomes', () => {
+    expect(canRetryPropertyPurchase('pending')).toBe(true)
+    expect(canRetryPropertyPurchase('retryable-error')).toBe(true)
+    expect(canRetryPropertyPurchase('refund_pending')).toBe(true)
+    expect(canRetryPropertyPurchase('success')).toBe(false)
+    expect(canRetryPropertyPurchase('cancelled')).toBe(false)
+  })
+
+  it('persists the payment id and retries the same order after a retryable confirmation error', async () => {
+    const api = {
+      createPurchase: jest.fn().mockResolvedValue(purchaseOrder),
+      confirmPurchase: jest.fn()
+        .mockRejectedValueOnce(Object.assign(new Error('temporary outage'), { status: 503 }))
+        .mockResolvedValueOnce({ purchase_id: 'purchase-123', status: 'paid' }),
+    }
+    const portone = { requestPayment: jest.fn().mockResolvedValue({ paymentId: 'payment-123' }) }
+    const sessionStorage = makeStorage()
+
+    const firstAttempt = await startPropertyPurchase({ propertyIdx: 9, api, portone, storeId: 'store', channelKey: 'channel', redirectUrl: '/properties/purchase/return', sessionStorage })
+
+    expect(firstAttempt.state).toBe('retryable-error')
+    expect(sessionStorage.getItem('property-purchase-id')).toBe('purchase-123')
+    expect(sessionStorage.getItem('property-purchase-payment-id')).toBe('payment-123')
+
+    const retry = await confirmPropertyPurchaseReturn({ api, sessionStorage })
+
+    expect(api.confirmPurchase).toHaveBeenLastCalledWith('purchase-123', { payment_id: 'payment-123' })
+    expect(retry).toMatchObject({ state: 'success', status: 'paid' })
+    expect(sessionStorage.values.size).toBe(0)
   })
 
   it('test_seller_or_unavailable_listing_cannot_start_checkout', async () => {

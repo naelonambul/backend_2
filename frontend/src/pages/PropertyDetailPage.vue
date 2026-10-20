@@ -5,7 +5,7 @@ import { createApiClient } from '../api'
 import { getCurrentUserOrNull } from '../auth/session'
 import { formatArea, formatPrice } from '../lib/property-view'
 import PortOne from '../lib/portone'
-import { canStartPropertyPurchase, startPropertyPurchase } from '../lib/property-purchase'
+import { canRetryPropertyPurchase, canStartPropertyPurchase, confirmPropertyPurchaseReturn, startPropertyPurchase } from '../lib/property-purchase'
 
 const route = useRoute()
 const api = createApiClient()
@@ -62,9 +62,23 @@ async function startCheckout() {
       sessionStorage: window.sessionStorage,
     })
     checkoutState.value = result.state
-    if (result.state === 'success') await loadProperty()
+    if (result.state === 'success' || result.state === 'cancelled') await loadProperty()
   } catch (requestError) {
     checkoutError.value = requestError.message || '결제를 시작하지 못했습니다.'
+  } finally {
+    checkoutLoading.value = false
+  }
+}
+
+async function retryPurchaseConfirmation() {
+  if (checkoutLoading.value) return
+  checkoutError.value = ''
+  checkoutLoading.value = true
+  try {
+    const result = await confirmPropertyPurchaseReturn({ api, sessionStorage: window.sessionStorage })
+    checkoutState.value = result.state
+    if (result.state === 'success') await loadProperty()
+    if (result.state === 'terminal-error') checkoutError.value = result.error?.message || '결제 결과를 확인하지 못했습니다.'
   } finally {
     checkoutLoading.value = false
   }
@@ -96,14 +110,16 @@ watch(() => route.params.idx, () => loadProperty(), { immediate: true })
         <section v-else-if="sessionError" class="purchase-panel purchase-panel--error" role="alert">{{ sessionError }}</section>
         <section v-else-if="currentUser?.role === 'buyer' && property.availability === 'available'" class="purchase-panel">
           <div><p class="section-label">구매 안내</p><strong class="purchase-panel__price">{{ formatPrice(property.price_krw) }}</strong><p>안전한 카드 결제를 위해 주문 정보를 서버에서 확인합니다.</p></div>
-          <button class="button-primary" type="button" :disabled="checkoutLoading" @click="startCheckout">{{ checkoutLoading ? '결제창 여는 중…' : '카드로 구매하기' }} <span aria-hidden="true">↗</span></button>
+          <button v-if="!canRetryPropertyPurchase(checkoutState)" class="button-primary" type="button" :disabled="checkoutLoading" @click="startCheckout">{{ checkoutLoading ? '결제창 여는 중…' : '카드로 구매하기' }} <span aria-hidden="true">↗</span></button>
         </section>
         <section v-else-if="currentUser?.role === 'buyer'" class="purchase-panel"><p class="section-label">매물 상태</p><strong>{{ property.availability === 'sold' ? '판매 완료된 매물입니다.' : '현재 다른 구매자가 결제를 진행 중입니다.' }}</strong></section>
+        <button v-if="currentUser?.role === 'buyer' && canRetryPropertyPurchase(checkoutState)" class="button-primary purchase-login" type="button" :disabled="checkoutLoading" @click="retryPurchaseConfirmation">{{ checkoutLoading ? '결과 확인 중…' : checkoutState === 'refund_pending' ? '환불 상태 다시 확인' : '결제 결과 다시 확인' }}</button>
         <p v-if="currentUser?.role === 'seller'" class="purchase-note">판매자 계정으로 로그인되어 있어 구매할 수 없습니다.</p>
         <RouterLink v-else-if="!currentUser && !sessionLoading && !sessionError" class="button-primary purchase-login" :to="{ name: 'login', query: { redirect: route.fullPath } }">로그인하고 구매하기</RouterLink>
         <p v-if="checkoutError" class="form-error" role="alert">{{ checkoutError }}</p>
         <p v-else-if="checkoutState === 'cancelled'" class="purchase-note" role="status">결제가 취소되었습니다. 원하시면 다시 시도해 주세요.</p>
-        <p v-else-if="checkoutState === 'pending' || checkoutState === 'retryable-error'" class="purchase-note" role="status">결제 결과를 확인하고 있습니다. 이 페이지를 닫지 말고 잠시 후 다시 확인해 주세요.</p>
+        <p v-else-if="checkoutState === 'pending' || checkoutState === 'retryable-error'" class="purchase-note" role="status">결제 결과를 확인하고 있습니다. 같은 주문의 확인 버튼을 눌러 다시 확인해 주세요.</p>
+        <p v-else-if="checkoutState === 'refund_pending'" class="purchase-note" role="alert">결제는 승인되었지만 취소 확인이 필요합니다. 환불 상태를 다시 확인해 주세요.</p>
         <p v-else-if="checkoutState === 'failed' || checkoutState === 'terminal-error'" class="purchase-note" role="alert">결제가 완료되지 않았습니다. 매물 상태를 다시 확인해 주세요.</p>
         <RouterLink class="button-secondary" :to="{ name: 'property-list' }">← 매물 목록으로</RouterLink>
       </div>
