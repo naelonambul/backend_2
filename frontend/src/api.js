@@ -1,3 +1,11 @@
+const LEGACY_DEFAULT_API_BASE_URLS = ['http://localhost:8000', 'http://127.0.0.1:8000']
+
+function getDefaultApiBaseUrl() {
+  return typeof __BACKEND_ORIGIN__ !== 'undefined'
+    ? __BACKEND_ORIGIN__
+    : 'http://127.0.0.1:8000'
+}
+
 export class ApiError extends Error {
   constructor(message, status) {
     super(message)
@@ -11,10 +19,16 @@ export function normalizeBaseUrl(value) {
 }
 
 export function getConfiguredBaseUrl() {
+  const defaultBaseUrl = getDefaultApiBaseUrl()
   if (typeof localStorage !== 'undefined') {
-    return localStorage.getItem('note-api-base') || 'http://localhost:8000'
+    const configuredBaseUrl = localStorage.getItem('note-api-base')
+    if (configuredBaseUrl && LEGACY_DEFAULT_API_BASE_URLS.includes(normalizeBaseUrl(configuredBaseUrl))) {
+      localStorage.setItem('note-api-base', defaultBaseUrl)
+      return defaultBaseUrl
+    }
+    return configuredBaseUrl || defaultBaseUrl
   }
-  return 'http://localhost:8000'
+  return defaultBaseUrl
 }
 
 export function createApiClient(baseUrl = getConfiguredBaseUrl(), fetchImpl) {
@@ -24,7 +38,7 @@ export function createApiClient(baseUrl = getConfiguredBaseUrl(), fetchImpl) {
     const fetcher = fetchImpl ?? globalThis.fetch
     if (!fetcher) throw new Error('현재 브라우저에서 fetch를 사용할 수 없습니다.')
 
-    const response = await fetcher(`${base}${path}`, {
+    const response = await fetcher(base + path, {
       method,
       credentials: 'include',
       headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
@@ -35,7 +49,7 @@ export function createApiClient(baseUrl = getConfiguredBaseUrl(), fetchImpl) {
     try {
       payload = await response.json()
     } catch {
-      // Empty and non-JSON responses are represented as null in the inspector.
+      // Empty and non-JSON responses are represented as null.
     }
 
     if (!response.ok) {
@@ -44,7 +58,7 @@ export function createApiClient(baseUrl = getConfiguredBaseUrl(), fetchImpl) {
         ? detail.map((item) => item.msg).filter(Boolean).join(', ')
         : typeof detail === 'string'
           ? detail
-          : `요청을 처리하지 못했습니다. (${response.status})`
+          : '요청을 처리하지 못했습니다. (' + response.status + ')'
       throw new ApiError(message, response.status)
     }
 
@@ -55,8 +69,12 @@ export function createApiClient(baseUrl = getConfiguredBaseUrl(), fetchImpl) {
     ping: () => request('/'),
     signup: (data) => request('/user/signup', { method: 'POST', body: data }),
     login: (data) => request('/user/login', { method: 'POST', body: data }),
+    getCurrentUser: () => request('/user/me'),
+    logout: () => request('/user/logout', { method: 'POST' }),
+    createKakaoState: () => request('/user/kakao/state', { method: 'POST' }),
+    completeKakaoLogin: (data) => request('/user/kakao/callback', { method: 'POST', body: data }),
     registerBoard: (data) => request('/board/register', { method: 'POST', body: data }),
     listBoards: () => request('/board/list'),
-    readBoard: (idx) => request(`/board/read/${encodeURIComponent(idx)}`),
+    readBoard: (idx) => request('/board/read/' + encodeURIComponent(idx)),
   }
 }

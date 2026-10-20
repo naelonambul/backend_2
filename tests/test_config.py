@@ -1,0 +1,27 @@
+from app.core.config import Settings
+from app.core.config import settings
+from app.main import app
+from fastapi.testclient import TestClient
+
+
+def test_frontend_and_backend_origins_default_to_loopback_addresses(monkeypatch):
+    monkeypatch.delenv("FRONTEND_ORIGIN", raising=False)
+    monkeypatch.delenv("BACKEND_ORIGIN", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.FRONTEND_ORIGIN == "http://127.0.0.1:5173"
+    assert settings.BACKEND_ORIGIN == "http://127.0.0.1:8000"
+
+
+def test_cors_allows_requests_from_the_configured_frontend_origin():
+    response = TestClient(app).options(
+        "/user/me",
+        headers={
+            "Origin": settings.FRONTEND_ORIGIN,
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == settings.FRONTEND_ORIGIN

@@ -6,17 +6,22 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
-from app.api.routers import user, board
+from app.api.routers import user, board, property, purchase
 from app.db.database import Base, engine
 from app.models.board import Board
 from app.models.user import User
+from app.models.social_account import SocialAccount
+from app.models.property import Property
+from app.models.purchase import Purchase
+from app.models.payment_reconciliation import PaymentReconciliation
+from app.core.config import settings
 
 app = FastAPI(title="노트 API", version="0.1.0")
 
 # CORS 설정: 프론트엔드 HTML/JS에서의 비동기 API 호출 허용
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[settings.FRONTEND_ORIGIN],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,6 +29,8 @@ app.add_middleware(
 
 app.include_router(user.router)
 app.include_router(board.router)
+app.include_router(property.router)
+app.include_router(purchase.router)
 
 Base.metadata.create_all(bind=engine)
 
