@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import AnyHttpUrl, BaseModel, Field
 
 
@@ -20,5 +22,6 @@ class PropertyRead(BaseModel):
     room_count: int
     description: str
     image_url: str | None
+    availability: Literal["available", "reserved", "sold"] = "available"
 
     model_config = {"from_attributes": True}

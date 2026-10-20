@@ -66,6 +66,7 @@ def test_property_list_is_empty_then_returns_newest_first(client):
 
     assert response.status_code == 200
     assert [item["title"] for item in response.json()] == ["Second", "First"]
+    assert [item["availability"] for item in response.json()] == ["available", "available"]
 
 
 def test_property_detail_returns_listing_and_unknown_returns_404(client):
@@ -74,6 +75,7 @@ def test_property_detail_returns_listing_and_unknown_returns_404(client):
 
     assert created.status_code == 200
     assert client.get(f"/properties/{created.json()['idx']}").json() == created.json()
+    assert created.json()["availability"] == "available"
     assert client.get("/properties/999").status_code == 404
 
 

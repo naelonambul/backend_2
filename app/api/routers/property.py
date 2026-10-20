@@ -7,13 +7,34 @@ from app.db.database import get_db
 from app.models.property import Property
 from app.models.user import User
 from app.schemas.property import PropertyCreate, PropertyRead
+from app.models.purchase import Purchase
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
 
+def _property_response(property_record: Property, db: Session):
+    active = db.scalars(
+        select(Purchase.status).where(
+            Purchase.property_idx == property_record.idx,
+            Purchase.status.in_(("pending", "paid", "refund_pending")),
+        )
+    ).all()
+    if "paid" in active:
+        availability = "sold"
+    elif active:
+        availability = "reserved"
+    else:
+        availability = "available"
+    return {
+        **PropertyRead.model_validate(property_record, from_attributes=True).model_dump(),
+        "availability": availability,
+    }
+
+
 @router.get("", response_model=list[PropertyRead])
 def list_properties(db: Session = Depends(get_db)):
-    return db.scalars(select(Property).order_by(Property.idx.desc())).all()
+    properties = db.scalars(select(Property).order_by(Property.idx.desc())).all()
+    return [_property_response(item, db) for item in properties]
 
 
 @router.get("/{idx}", response_model=PropertyRead)
@@ -21,7 +42,7 @@ def read_property(idx: int, db: Session = Depends(get_db)):
     property_record = db.get(Property, idx)
     if property_record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-    return property_record
+    return _property_response(property_record, db)
 
 
 @router.post("", response_model=PropertyRead)
@@ -41,4 +62,4 @@ def create_property(
     db.add(property_record)
     db.commit()
     db.refresh(property_record)
-    return property_record
+    return _property_response(property_record, db)
