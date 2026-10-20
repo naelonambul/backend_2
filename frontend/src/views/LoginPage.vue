@@ -3,14 +3,13 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { createApiClient } from '../api/api.js'
 import { beginKakaoLogin } from '../stores/auth/kakao.js'
-import { getCurrentUserOrNull } from '../stores/auth/session.js'
+import { currentUser, refreshCurrentUser, clearCurrentUser } from '../stores/auth/session.js'
 import { getSafeRedirectTarget } from '../stores/auth/redirect.js'
 
 const route = useRoute()
 const router = useRouter()
 const api = createApiClient()
 const form = ref({ email: '', password: '' })
-const currentUser = ref(null)
 const sessionLoading = ref(true)
 const sessionError = ref('')
 const submitting = ref(false)
@@ -21,7 +20,7 @@ const justCreated = computed(() => route.query.created === '1')
 
 onMounted(async () => {
   try {
-    currentUser.value = await getCurrentUserOrNull(api)
+    await refreshCurrentUser(api)
     const redirectTarget = getSafeRedirectTarget(route.query.redirect)
     if (currentUser.value && redirectTarget) await router.replace(redirectTarget)
   }
@@ -34,7 +33,7 @@ async function submitLogin() {
   submitting.value = true
   try {
     await api.login(form.value)
-    currentUser.value = await api.getCurrentUser()
+    await refreshCurrentUser(api)
     const redirectTarget = getSafeRedirectTarget(route.query.redirect)
     if (redirectTarget) await router.push(redirectTarget)
   }
@@ -45,7 +44,7 @@ async function submitLogin() {
 async function submitLogout() {
   sessionError.value = ''
   logoutSubmitting.value = true
-  try { await api.logout(); currentUser.value = null }
+  try { await api.logout(); clearCurrentUser() }
   catch (requestError) { sessionError.value = requestError.message || '로그아웃하지 못했습니다.' }
   finally { logoutSubmitting.value = false }
 }

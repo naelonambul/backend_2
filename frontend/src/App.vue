@@ -1,9 +1,16 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { createApiClient } from './api/api.js'
+import { currentUser, refreshCurrentUser } from './stores/auth/session.js'
 
 const route = useRoute()
 const isAuthPage = computed(() => route.name === 'login' || route.name === 'signup' || route.name === 'kakao-callback')
+const api = createApiClient()
+
+watch(() => route.fullPath, () => {
+  refreshCurrentUser(api).catch(() => {})
+}, { immediate: true })
 </script>
 
 <template>
@@ -14,7 +21,7 @@ const isAuthPage = computed(() => route.name === 'login' || route.name === 'sign
           <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 36 36" fill="none"><path d="m5 17 13-11 13 11v14H5V17Z" fill="currentColor"/><path d="M14 31V19h8v12M5 17l13-11 13 11" stroke="#F4F7F5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           <span class="brand-name">하벤<span> 홈</span></span>
         </RouterLink>
-        <nav class="header-nav" aria-label="주요 메뉴"><RouterLink :to="{ name: 'property-list' }">매물 둘러보기</RouterLink><RouterLink :to="{ name: 'login' }">로그인</RouterLink></nav>
+        <nav class="header-nav" aria-label="주요 메뉴"><RouterLink :to="{ name: 'property-list' }">매물 둘러보기</RouterLink><RouterLink :to="{ name: 'login' }">{{ currentUser?.name || '로그인' }}</RouterLink></nav>
         <RouterLink class="header-create" :to="{ name: 'property-create' }"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg><span>매물 등록</span></RouterLink>
       </div>
     </header>
