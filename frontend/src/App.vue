@@ -1,89 +1,51 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { createApiClient, getConfiguredBaseUrl, normalizeBaseUrl } from './api'
-import { isNavigating } from './router'
-import PageSkeleton from './components/PageSkeleton.vue'
 
 const route = useRoute()
-const serverUrl = ref(getConfiguredBaseUrl())
-const connection = ref('unknown')
-const checkingConnection = ref(false)
-const connectionLabel = computed(() => ({
-  unknown: '연결 확인 전',
-  checking: '확인 중',
-  connected: '연결됨',
-  disconnected: '연결 실패',
-}[connection.value]))
-
-function skeletonVariant(name) {
-  if (name === 'board-list') return 'list'
-  if (name === 'board-detail') return 'detail'
-  if (name === 'board-create') return 'write'
-  return 'form'
-}
-
-async function checkConnection() {
-  const base = normalizeBaseUrl(serverUrl.value)
-  if (!base) {
-    connection.value = 'disconnected'
-    return
-  }
-  serverUrl.value = base
-  localStorage.setItem('note-api-base', base)
-  checkingConnection.value = true
-  connection.value = 'checking'
-  try {
-    await createApiClient(base).ping()
-    connection.value = 'connected'
-  } catch {
-    connection.value = 'disconnected'
-  } finally {
-    checkingConnection.value = false
-  }
-}
+const isAuthPage = computed(() => route.name === 'login' || route.name === 'signup' || route.name === 'kakao-callback')
 </script>
 
 <template>
   <div class="app-shell">
-    <header class="topbar">
-      <RouterLink class="brand" :to="{ name: 'board-list' }" aria-label="모아 노트 게시글 목록">
-        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-        <span class="brand-copy"><strong>모아 노트</strong><small>NOTE WORKSPACE</small></span>
-      </RouterLink>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <RouterLink class="brand" :to="{ name: 'board-list' }" aria-label="모아 노트 보관함">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 36 36" fill="none">
+              <path d="M9 8.5c0-.83.67-1.5 1.5-1.5h17c.83 0 1.5.67 1.5 1.5v20.2a.8.8 0 0 1-1.2.69L19 24.7l-8.8 4.69a.8.8 0 0 1-1.2-.69V8.5Z" fill="currentColor" />
+              <path d="M14 13h10M14 17h7" stroke="#F4F7F5" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span class="brand-name">모아 노트</span>
+        </RouterLink>
 
-      <nav class="main-nav" aria-label="주요 메뉴">
-        <RouterLink :to="{ name: 'board-list' }" active-class="active">게시글 목록</RouterLink>
-        <RouterLink :to="{ name: 'board-create' }" active-class="active">새 글 작성</RouterLink>
-        <RouterLink :to="{ name: 'signup' }" active-class="active">회원가입</RouterLink>
-        <RouterLink :to="{ name: 'login' }" active-class="active">로그인</RouterLink>
-      </nav>
+        <nav class="header-nav" aria-label="주요 메뉴">
+          <RouterLink :to="{ name: 'board-list' }">보관함</RouterLink>
+          <RouterLink :to="{ name: 'login' }">로그인</RouterLink>
+        </nav>
 
-      <form class="server-control" @submit.prevent="checkConnection">
-        <label for="server-url">API 서버</label>
-        <input id="server-url" v-model="serverUrl" type="url" aria-label="API 서버 주소" />
-        <button type="submit" :disabled="checkingConnection">{{ checkingConnection ? '확인 중' : '연결 확인' }}</button>
-        <span class="connection-state" :class="connection"><i></i>{{ connectionLabel }}</span>
-      </form>
+        <RouterLink class="header-create" :to="{ name: 'board-create' }">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M10 4v12M4 10h12" />
+          </svg>
+          <span>새 기록</span>
+        </RouterLink>
+      </div>
     </header>
 
-    <main class="site-main">
-      <RouterView v-slot="{ Component, route: viewRoute }">
+    <main class="main-content" :class="{ 'main-content--auth': isAuthPage }">
+      <RouterView v-slot="{ Component }">
         <Transition name="page" mode="out-in">
-          <component :is="Component" :key="viewRoute.fullPath" />
+          <component :is="Component" />
         </Transition>
       </RouterView>
     </main>
 
-    <Transition name="loader">
-      <div v-if="isNavigating" class="navigation-overlay" aria-live="polite">
-        <PageSkeleton :variant="skeletonVariant(route.name)" />
-      </div>
-    </Transition>
-
     <footer class="site-footer">
-      <span>MOA NOTE · FASTAPI</span>
-      <span>작은 기록을 모으는 공간</span>
+      <RouterLink class="footer-brand" :to="{ name: 'board-list' }">모아 노트</RouterLink>
+      <span>작은 기록도 다시 만날 수 있도록.</span>
+      <span class="footer-copy">기록은 이 기기에서 시작됩니다.</span>
     </footer>
   </div>
 </template>

@@ -2,44 +2,80 @@
 import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { createApiClient } from '../api'
-import PageSkeleton from '../components/PageSkeleton.vue'
 
 const router = useRouter()
 const form = ref({ title: '', contents: '' })
-const loading = ref(false)
+const submitting = ref(false)
 const error = ref('')
 
-async function submitBoard() {
-  loading.value = true
+async function submitNote() {
   error.value = ''
+  submitting.value = true
   try {
-    const board = await createApiClient().registerBoard({ ...form.value })
-    await router.push({ name: 'board-detail', params: { idx: board.idx } })
+    const note = await createApiClient().registerBoard({
+      title: form.value.title.trim(),
+      contents: form.value.contents.trim(),
+    })
+    await router.push({ name: 'board-detail', params: { idx: note.idx } })
   } catch (requestError) {
-    error.value = requestError.message || '게시글을 저장하지 못했습니다.'
+    error.value = requestError.message || '기록을 저장하지 못했습니다.'
   } finally {
-    loading.value = false
+    submitting.value = false
   }
 }
 </script>
 
 <template>
-  <section class="write-page">
-    <div class="page-heading wide-heading">
-      <span class="eyebrow"><i></i> WRITE A NOTE</span>
-      <h1>새로운 기록을<br /><em>남겨보세요.</em></h1>
-      <p>제목과 내용을 작성하면 노트 보관함에 저장됩니다.</p>
+  <section class="editor-page" aria-labelledby="editor-title">
+    <RouterLink class="back-link" :to="{ name: 'board-list' }"><span aria-hidden="true">←</span> 보관함으로</RouterLink>
+
+    <div class="editor-heading">
+      <p class="section-label">새 기록</p>
+      <h1 id="editor-title">기억하고 싶은 장면을<br />천천히 적어 보세요.</h1>
+      <p>짧은 문장 하나도 이곳에 오래 남겨둘 수 있어요.</p>
     </div>
 
-    <PageSkeleton v-if="loading" variant="write" compact />
-    <article v-else class="form-card write-card">
-      <div class="form-card-top"><div><span class="section-kicker">NEW POST</span><h2>게시글 작성</h2></div><span class="route-index">03 / 05</span></div>
-      <form class="api-form" @submit.prevent="submitBoard">
-        <label>제목<input v-model.trim="form.title" name="title" placeholder="게시글 제목을 입력하세요" required maxlength="200" /></label>
-        <label>내용<textarea v-model.trim="form.contents" name="contents" rows="10" placeholder="기억하고 싶은 이야기를 적어보세요." required></textarea></label>
-        <div class="write-actions"><RouterLink class="quiet-link" :to="{ name: 'board-list' }">목록으로</RouterLink><button class="primary-button" type="submit">게시글 저장 <span>↗</span></button></div>
-      </form>
-      <p v-if="error" class="form-message error" role="alert">{{ error }}</p>
-    </article>
+    <form class="editor-sheet" @submit.prevent="submitNote">
+      <div class="editor-sheet__top">
+        <span class="editor-sheet__dot" aria-hidden="true"></span>
+        <span>새 페이지</span>
+        <span class="editor-sheet__date">지금 쓰는 중</span>
+      </div>
+
+      <label class="field-label" for="note-title">제목</label>
+      <input
+        id="note-title"
+        v-model="form.title"
+        class="editor-title-input"
+        name="title"
+        type="text"
+        maxlength="200"
+        placeholder="무엇을 기억하고 싶나요?"
+        autocomplete="off"
+        required
+      />
+
+      <label class="field-label" for="note-contents">내용</label>
+      <textarea
+        id="note-contents"
+        v-model="form.contents"
+        class="editor-body-input"
+        name="contents"
+        rows="10"
+        placeholder="떠오르는 생각을 편하게 적어 보세요."
+        required
+      ></textarea>
+
+      <div class="editor-footer">
+        <span>{{ form.contents.length }}자</span>
+        <div class="editor-actions">
+          <RouterLink class="button-secondary" :to="{ name: 'board-list' }">취소</RouterLink>
+          <button class="button-primary" type="submit" :disabled="submitting">
+            {{ submitting ? '저장 중…' : '기록 저장' }} <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+      </div>
+      <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+    </form>
   </section>
 </template>

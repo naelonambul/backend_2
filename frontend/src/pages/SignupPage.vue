@@ -1,53 +1,51 @@
 <script setup>
 import { ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { createApiClient } from '../api'
-import PageSkeleton from '../components/PageSkeleton.vue'
 
+const router = useRouter()
 const form = ref({ name: '', email: '', password: '' })
-const loading = ref(false)
-const message = ref('')
+const submitting = ref(false)
 const error = ref('')
-const registeredEmail = ref('')
 
 async function submitSignup() {
-  loading.value = true
-  message.value = ''
   error.value = ''
+  submitting.value = true
   try {
-    const payload = { ...form.value }
-    await createApiClient().signup(payload)
-    registeredEmail.value = payload.email
-    message.value = '가입이 완료되었습니다. 이메일과 비밀번호로 로그인해주세요.'
-    form.value = { name: '', email: '', password: '' }
+    await createApiClient().signup(form.value)
+    await router.push({ name: 'login', query: { created: '1' } })
   } catch (requestError) {
-    error.value = requestError.message || '회원가입에 실패했습니다.'
+    error.value = requestError.message || '가입을 완료하지 못했습니다.'
   } finally {
-    loading.value = false
+    submitting.value = false
   }
 }
 </script>
 
 <template>
-  <section class="auth-page">
-    <div class="page-heading">
-      <span class="eyebrow"><i></i> CREATE YOUR ACCOUNT</span>
-      <h1>기록을 시작할<br /><em>계정을 만들어보세요.</em></h1>
-      <p>이름과 이메일을 등록하면 노트 작업 공간을 이용할 수 있어요.</p>
+  <section class="auth-page" aria-labelledby="signup-title">
+    <div class="auth-aside auth-aside--butter">
+      <span class="auth-aside__mark" aria-hidden="true">✳</span>
+      <p>생각이 머물 자리를<br />새로 만들어 보세요.</p>
+      <span class="auth-aside__caption">첫 페이지는 금방 시작돼요</span>
     </div>
-
-    <PageSkeleton v-if="loading" variant="form" compact />
-    <article v-else class="form-card auth-card">
-      <div class="form-card-top"><div><span class="section-kicker">NEW MEMBER</span><h2>회원가입</h2></div><span class="route-index">01 / 05</span></div>
-      <form class="api-form" @submit.prevent="submitSignup">
-        <label>이름<input v-model.trim="form.name" name="name" autocomplete="name" placeholder="홍길동" required /></label>
-        <label>이메일<input v-model.trim="form.email" name="email" type="email" autocomplete="email" placeholder="hello@example.com" required /></label>
-        <label>비밀번호<input v-model="form.password" name="password" type="password" autocomplete="new-password" placeholder="비밀번호를 입력하세요" required /></label>
-        <button class="primary-button" type="submit">계정 만들기 <span>↗</span></button>
+    <div class="auth-card">
+      <p class="section-label">새로운 시작</p>
+      <h1 id="signup-title">회원가입</h1>
+      <p class="auth-copy">당신의 기록을 위한 공간을 만들어요.</p>
+      <form class="auth-form" @submit.prevent="submitSignup">
+        <label class="field-label" for="signup-name">이름</label>
+        <input id="signup-name" v-model.trim="form.name" type="text" autocomplete="name" placeholder="이름을 입력하세요" required />
+        <label class="field-label" for="signup-email">이메일</label>
+        <input id="signup-email" v-model.trim="form.email" type="email" autocomplete="email" placeholder="name@example.com" required />
+        <label class="field-label" for="signup-password">비밀번호</label>
+        <input id="signup-password" v-model="form.password" type="password" autocomplete="new-password" minlength="1" placeholder="비밀번호를 입력하세요" required />
+        <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+        <button class="button-primary button-primary--wide" type="submit" :disabled="submitting">
+          {{ submitting ? '가입 중…' : '계정 만들기' }} <span aria-hidden="true">↗</span>
+        </button>
       </form>
-      <p v-if="message" class="form-message success" role="status">{{ message }} <RouterLink :to="{ name: 'login', query: { email: registeredEmail } }">로그인하기 →</RouterLink></p>
-      <p v-if="error" class="form-message error" role="alert">{{ error }}</p>
-      <p class="form-footnote">이미 계정이 있나요? <RouterLink :to="{ name: 'login' }">로그인</RouterLink></p>
-    </article>
+      <p class="auth-switch">이미 계정이 있나요? <RouterLink :to="{ name: 'login' }">로그인</RouterLink></p>
+    </div>
   </section>
 </template>

@@ -1,12 +1,89 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from app.schemas.user import LoginReq, LoginRes, SignUpReq, SignUpRes
+import secrets
+
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from app.schemas.user import (
+    KakaoCallbackReq,
+    KakaoStateRes,
+    CurrentUserRes,
+    LoginReq,
+    LoginRes,
+    LogoutRes,
+    SignUpReq,
+    SignUpRes,
+    SocialLoginRes,
+)
 from app.core.security import createToken
 from app.models.user import User
+from app.models.social_account import SocialAccount
+from app.services.kakao_oauth import KakaoOAuthError, KakaoOAuthService, get_kakao_oauth_service
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.db.database import get_db
+from app.core.config import settings
 
 router = APIRouter(prefix="/user", tags=["user"])
+
+
+def unauthorized_session() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="로그인이 필요합니다.",
+    )
+
+
+@router.get("/me", response_model=CurrentUserRes)
+def current_user(request: Request, db: Session = Depends(get_db)):
+    token = request.cookies.get("EN_AT")
+    if not token:
+        raise unauthorized_session()
+
+    try:
+        claims = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+        user_idx = int(claims["sub"])
+    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError):
+        raise unauthorized_session()
+
+    user = db.get(User, user_idx)
+    if not user:
+        raise unauthorized_session()
+
+    social_account = db.scalar(
+        select(SocialAccount).where(SocialAccount.user_idx == user.idx)
+    )
+    return {
+        "name": user.name,
+        "email": user.email,
+        "provider": social_account.provider if social_account else "email",
+    }
+
+
+@router.post("/logout", response_model=LogoutRes)
+def logout(response: Response):
+    response.delete_cookie(
+        "EN_AT",
+        path="/",
+        httponly=True,
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+    )
+    return {"ok": True}
+
+
+def kakao_state_cookie_deletion_header() -> str:
+    cookie_response = Response()
+    cookie_response.delete_cookie(
+        "KAKAO_OAUTH_STATE",
+        path="/user/kakao",
+        httponly=True,
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+    )
+    return cookie_response.headers["set-cookie"]
 
 # 제어의 역전 : IoC, 객체 생성이나 프로그램의 실행 흐름의 제어를 외부로 넘기는 프로그래밍 방식
 # 의존성 주입 : DI, 필요한 객체를 우리가 직접 생성하지 않고 외부에서 전달해주는 방식
@@ -39,10 +116,106 @@ def login(req: LoginReq, res: Response, db: Session = Depends(get_db)):
 
     res.set_cookie(
         "EN_AT",
-        createToken(req.email),
+        createToken(str(user.idx)),
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+        max_age=1800,
     )
     return user
+
+
+@router.post("/kakao/state", response_model=KakaoStateRes)
+def create_kakao_state(response: Response):
+    state = secrets.token_urlsafe(32)
+    response.set_cookie(
+        "KAKAO_OAUTH_STATE",
+        state,
+        httponly=True,
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+        max_age=300,
+        path="/user/kakao",
+    )
+    return {"state": state}
+
+
+@router.post("/kakao/callback", response_model=SocialLoginRes)
+async def complete_kakao_login(
+    req: KakaoCallbackReq,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    oauth: KakaoOAuthService = Depends(get_kakao_oauth_service),
+):
+    expected_state = request.cookies.get("KAKAO_OAUTH_STATE", "")
+    if (
+        not expected_state
+        or not expected_state.isascii()
+        or not req.state.isascii()
+        or not secrets.compare_digest(expected_state, req.state)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="카카오 로그인 요청을 확인할 수 없습니다. 다시 시도해 주세요.",
+            headers={"Set-Cookie": kakao_state_cookie_deletion_header()},
+        )
+
+    try:
+        profile = await oauth.fetch_profile(req.code)
+    except KakaoOAuthError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="카카오 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+            headers={"Set-Cookie": kakao_state_cookie_deletion_header()},
+        ) from exc
+
+    social_account = db.scalar(
+        select(SocialAccount).where(
+            SocialAccount.provider == "kakao",
+            SocialAccount.provider_user_id == profile["id"],
+        )
+    )
+    if social_account:
+        user = db.get(User, social_account.user_idx)
+    else:
+        user = User(name=profile["nickname"], email=None, password=None)
+        db.add(user)
+        db.flush()
+        db.add(
+            SocialAccount(
+                user_idx=user.idx,
+                provider="kakao",
+                provider_user_id=profile["id"],
+            )
+        )
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            # A simultaneous first login can win the unique provider-id constraint.
+            social_account = db.scalar(
+                select(SocialAccount).where(
+                    SocialAccount.provider == "kakao",
+                    SocialAccount.provider_user_id == profile["id"],
+                )
+            )
+            if not social_account:
+                raise HTTPException(
+                    status_code=500,
+                    detail="카카오 계정을 저장하지 못했습니다.",
+                    headers={"Set-Cookie": kakao_state_cookie_deletion_header()},
+                )
+            user = db.get(User, social_account.user_idx)
+
+    response.delete_cookie("KAKAO_OAUTH_STATE", path="/user/kakao")
+    response.set_cookie(
+        "EN_AT",
+        createToken(str(user.idx)),
+        httponly=True,
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+        max_age=1800,
+    )
+    return {"ok": True}
 
