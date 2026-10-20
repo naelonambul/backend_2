@@ -148,3 +148,40 @@ describe('note API client', () => {
     })
   })
 })
+
+describe('property API methods', () => {
+  it('lists properties from the public collection endpoint', async () => {
+    const rows = [{ idx: 3, title: 'Sunny apartment' }]
+    const fetchMock = jest.fn().mockResolvedValue(makeResponse(200, rows))
+    const client = createApiClient('http://localhost:8000', fetchMock)
+
+    await expect(client.listProperties()).resolves.toEqual(rows)
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8000/properties', {
+      method: 'GET', credentials: 'include', headers: undefined, body: undefined,
+    })
+  })
+
+  it('reads a property by its URL-encoded index', async () => {
+    const listing = { idx: 'A/B', title: 'Sunny apartment' }
+    const fetchMock = jest.fn().mockResolvedValue(makeResponse(200, listing))
+    const client = createApiClient('http://localhost:8000', fetchMock)
+
+    await expect(client.readProperty('A/B')).resolves.toEqual(listing)
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8000/properties/A%2FB', {
+      method: 'GET', credentials: 'include', headers: undefined, body: undefined,
+    })
+  })
+
+  it('registers a property as cookie-backed JSON', async () => {
+    const property = { title: 'Sunny apartment', price_krw: 500000000 }
+    const created = { idx: 12, ...property }
+    const fetchMock = jest.fn().mockResolvedValue(makeResponse(201, created))
+    const client = createApiClient('http://localhost:8000', fetchMock)
+
+    await expect(client.registerProperty(property)).resolves.toEqual(created)
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8000/properties', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(property),
+    })
+  })
+})
