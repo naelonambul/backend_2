@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy.pool import StaticPool
@@ -500,6 +501,52 @@ def test_paid_transition_race_cancels_or_tracks_capture_after_reservation_is_tak
         recovery = db.get(Reconciliation, stale_order["purchase_id"])
         assert recovery is not None
         assert recovery.payment_id == stale_order["payment_id"]
+
+
+def test_duplicate_confirmation_after_paid_commit_is_idempotent(client, monkeypatch):
+    property_item = create_property(client)
+    order = create_purchase(client, property_item["idx"]).json()
+    client.portone.payment = payment_for(order)
+    original_commit = SQLAlchemySession.commit
+    interleaved = {"done": False}
+    Purchase = importlib.import_module("app.models.purchase").Purchase
+
+    def commit_after_duplicate_confirmation(db):
+        pending_transition = next(
+            (
+                item
+                for item in db.identity_map.values()
+                if isinstance(item, Purchase)
+                and item.purchase_id == order["purchase_id"]
+                and item.status == "paid"
+            ),
+            None,
+        )
+        if pending_transition is not None and not interleaved["done"]:
+            interleaved["done"] = True
+            paid_at = pending_transition.paid_at
+            db.rollback()
+            with client.db_factory() as other_db:
+                competing_confirm = other_db.get(Purchase, order["purchase_id"])
+                competing_confirm.status = "paid"
+                competing_confirm.paid_at = paid_at
+                other_db.commit()
+            raise IntegrityError("simulated duplicate confirmation race", {}, RuntimeError())
+        return original_commit(db)
+
+    monkeypatch.setattr(SQLAlchemySession, "commit", commit_after_duplicate_confirmation)
+    client.cookies.clear()
+    login(client, "buyer@example.com")
+
+    response = client.post(
+        f"/purchases/{order['purchase_id']}/confirm", json={"payment_id": order["payment_id"]}
+    )
+
+    assert interleaved["done"] is True
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "paid"
+    assert client.portone.cancellations == []
+    assert purchase_record(client, order["purchase_id"]).status == "paid"
 
 
 @pytest.mark.parametrize("payment_status", ["FAILED", "CANCELLED", "READY"])

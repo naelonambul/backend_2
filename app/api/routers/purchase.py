@@ -240,6 +240,8 @@ def confirm_purchase(
                     raise HTTPException(
                         status_code=503, detail="Payment reconciliation is unavailable"
                     )
+                if order.status == "paid":
+                    return _confirm_response(order, db)
                 reconciliation = db.get(PaymentReconciliation, order.purchase_id)
                 now = utc_now()
                 unexpired = _as_utc(order.expires_at) > now
