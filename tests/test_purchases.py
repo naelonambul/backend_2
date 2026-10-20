@@ -362,7 +362,10 @@ def test_late_paid_order_is_cancelled_or_kept_refund_pending(client, cancel_fail
     assert client.portone.cancellations == [(order["payment_id"], "Late or conflicting payment")]
 
 
-def test_conflicting_late_paid_capture_does_not_cancel_competing_buyer_order(client):
+@pytest.mark.parametrize("competing_status", ["pending", "paid"])
+def test_conflicting_late_paid_capture_does_not_cancel_competing_buyer_order(
+    client, competing_status
+):
     property_item = create_property(client)
     stale_response = create_purchase(client, property_item["idx"], "stale-buyer@example.com")
     stale_order = stale_response.json()
@@ -377,6 +380,14 @@ def test_conflicting_late_paid_capture_does_not_cancel_competing_buyer_order(cli
     competing_response = create_purchase(client, property_item["idx"], "current-buyer@example.com")
     assert competing_response.status_code == 200
     competing_order = competing_response.json()
+    if competing_status == "paid":
+        with client.db_factory() as db:
+            current = db.scalar(
+                select(Purchase).where(Purchase.purchase_id == competing_order["purchase_id"])
+            )
+            current.status = "paid"
+            current.paid_at = datetime.now(timezone.utc)
+            db.commit()
     client.portone.payment = payment_for(stale_order)
     client.portone.cancel_error = importlib.import_module("app.services.portone").PortOneError(
         "cancel failed", retryable=True
@@ -391,7 +402,7 @@ def test_conflicting_late_paid_capture_does_not_cancel_competing_buyer_order(cli
 
     assert response.status_code == 200
     assert response.json()["status"] == "refund_pending"
-    assert purchase_record(client, competing_order["purchase_id"]).status == "pending"
+    assert purchase_record(client, competing_order["purchase_id"]).status == competing_status
     assert purchase_record(client, stale_order["purchase_id"]).status == "cancelled"
     Reconciliation = importlib.import_module("app.models.payment_reconciliation").PaymentReconciliation
     with client.db_factory() as db:
@@ -415,4 +426,4 @@ def test_conflicting_late_paid_capture_does_not_cancel_competing_buyer_order(cli
     assert response.json()["status"] == "cancelled"
     with client.db_factory() as db:
         assert db.get(Reconciliation, stale_order["purchase_id"]) is None
-    assert purchase_record(client, competing_order["purchase_id"]).status == "pending"
+    assert purchase_record(client, competing_order["purchase_id"]).status == competing_status
