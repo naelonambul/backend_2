@@ -22,7 +22,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
-      BACKEND_ORIGIN: ${{ vars.BACKEND_ORIGIN || 'http://100.100.100.20:8000' }}
+      BACKEND_ORIGIN: ${{ vars.BACKEND_ORIGIN || 'https://api.nenene.n-e.kr' }}
       FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN || format('http://{0}', secrets.DEPLOY_HOST) }}
       VITE_KAKAO_JAVASCRIPT_KEY: ${{ vars.VITE_KAKAO_JAVASCRIPT_KEY }}
       VITE_KAKAO_REDIRECT_URI: ${{ vars.VITE_KAKAO_REDIRECT_URI || format('{0}/auth/kakao/callback', vars.FRONTEND_ORIGIN || format('http://{0}', secrets.DEPLOY_HOST)) }}

@@ -19,9 +19,11 @@ from app.core.config import settings
 app = FastAPI(title="노트 API", version="0.1.0")
 
 # CORS 설정: 프론트엔드 HTML/JS에서의 비동기 API 호출 허용
+cors_origins = list(dict.fromkeys([settings.FRONTEND_ORIGIN, "https://www.nenene.n-e.kr"]))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_ORIGIN],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
