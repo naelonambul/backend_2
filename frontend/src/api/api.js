@@ -3,7 +3,7 @@ const LEGACY_DEFAULT_API_BASE_URLS = ['http://localhost:8000', 'http://127.0.0.1
 function getDefaultApiBaseUrl() {
   return typeof __BACKEND_ORIGIN__ !== 'undefined'
     ? __BACKEND_ORIGIN__
-    : 'http://127.0.0.1:8000'
+    : 'http://100.100.100.20:8000'
 }
 
 export class ApiError extends Error {
