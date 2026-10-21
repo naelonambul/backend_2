@@ -1,0 +1,111 @@
+name: Deploy frontend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/deploy/frontend.ps1'
+      - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-frontend-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_ORIGIN: ${{ vars.BACKEND_ORIGIN || format('http://{0}:8000', secrets.DEPLOY_HOST) }}
+      FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN || format('http://{0}', secrets.DEPLOY_HOST) }}
+      VITE_KAKAO_JAVASCRIPT_KEY: ${{ vars.VITE_KAKAO_JAVASCRIPT_KEY }}
+      VITE_KAKAO_REDIRECT_URI: ${{ vars.VITE_KAKAO_REDIRECT_URI || format('{0}/auth/kakao/callback', vars.FRONTEND_ORIGIN || format('http://{0}', secrets.DEPLOY_HOST)) }}
+      VITE_PORTONE_STORE_ID: ${{ vars.VITE_PORTONE_STORE_ID }}
+      VITE_PORTONE_CHANNEL_KEY: ${{ vars.VITE_PORTONE_CHANNEL_KEY }}
+    steps:
+      - name: Check deployment secrets
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          FRONTEND_SSH_PORT: ${{ secrets.FRONTEND_SSH_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for secret_name in DEPLOY_HOST FRONTEND_SSH_PORT DEPLOY_USER DEPLOY_PASSWORD DEPLOY_KNOWN_HOSTS; do
+            if [ -z "${!secret_name}" ]; then
+              echo "Required Actions secret is missing: ${secret_name}" >&2
+              exit 1
+            fi
+          done
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Package frontend build
+        working-directory: frontend/dist
+        run: zip -qr ../../frontend-deploy.zip .
+
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends sshpass
+
+      - name: Configure pinned SSH host key
+        shell: bash
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Transfer frontend build and deployment files
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          FRONTEND_SSH_PORT: ${{ secrets.FRONTEND_SSH_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cp frontend-deploy.zip _frontend-deploy.zip
+          cp .github/deploy/frontend.ps1 _deploy-frontend.ps1
+          sshpass -e scp -P "$FRONTEND_SSH_PORT" -o StrictHostKeyChecking=yes \
+            _frontend-deploy.zip _deploy-frontend.ps1 \
+            "$DEPLOY_USER@$DEPLOY_HOST:/C:/Users/test/Downloads/nginx-1.30.5/"
+
+      - name: Publish build to the Nginx document root
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          FRONTEND_SSH_PORT: ${{ secrets.FRONTEND_SSH_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sshpass -e ssh -p "$FRONTEND_SSH_PORT" -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\Users\test\Downloads\nginx-1.30.5\_deploy-frontend.ps1'
