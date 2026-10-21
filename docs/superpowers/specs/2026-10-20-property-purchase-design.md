@@ -37,10 +37,12 @@ Keep the existing `property` table and add a `purchase` table. Derive a property
 - `buyer_user_idx`: foreign key to `user.idx`
 - `amount_krw`: listed price copied from the database when the order is created
 - `currency`: `KRW`
-- `status`: `pending`, `paid`, `expired`, `failed`, `cancelled`, or `refund_pending`
+- `status`: `pending`, `paid`, `failed`, `cancelled`, or `refund_pending`
 - `expires_at`, `created_at`, `paid_at`: expiry and audit timestamps
 
 A SQLite partial unique index allows at most one purchase per property in `pending`, `paid`, or `refund_pending` state. In a transaction, order creation first expires stale `pending` rows and then inserts a new order. A unique-index conflict maps to a response saying that the property is already reserved or sold. Keep `paid` records as purchase history. Keep a `refund_pending` order active until cancellation is confirmed so the property cannot be sold twice while money may still be captured.
+
+Keep unresolved cancellation work in a separate `payment_reconciliation` table keyed by purchase ID, with payment ID, reconciliation status, and timestamps. This durable record tracks a captured payment even when another buyer already owns the property's active reservation; do not change that competing purchase. The confirmation API reports the effective state as `refund_pending` while reconciliation remains unresolved, and a later confirmation retries cancellation and removes the record after it succeeds.
 
 An order reserves the property for 15 minutes. Once expired, another buyer may create an order. If a payment for an expired order is later found to be paid, do not complete that sale; request a full PortOne cancellation instead. If cancellation fails, keep the order in `refund_pending` and block another sale until it can be resolved.
 
@@ -60,7 +62,7 @@ An order reserves the property for 15 minutes. Once expired, another buyer may c
 - Show the full listed price and a purchase button on the property detail page to a signed-in buyer.
 - The frontend calls the PortOne V2 SDK `requestPayment` with public `storeId` and `channelKey`, the server-issued `paymentId`, `KRW`, the server-issued amount, and the card payment method for Toss Payments new module.
 - Treat the SDK result or redirect as a signal to start server confirmation only. Do not complete an order using a browser amount or success flag.
-- Preserve the order identifier in session state for redirect return. On return, verify the signed-in user owns the order before calling the backend confirmation API. Do not store sensitive values in the URL or browser storage.
+- Preserve the server-issued purchase ID and payment ID together in `sessionStorage` for redirect return and retry. The browser uses the saved payment ID even if the return query contains a different one. The backend verifies the signed-in user owns the order before confirmation. Do not store secrets or session tokens in the URL or browser storage.
 
 ### Verify and complete on the server
 
@@ -73,7 +75,7 @@ An order reserves the property for 15 minutes. Once expired, another buyer may c
 - If payment is not yet complete or cannot be retrieved, do not mark the property sold. Retries must be idempotent.
 - If the order is still valid and is the property's only active order, mark it `paid` in a database transaction. If the order expired or a uniqueness conflict shows another order won, request a full PG cancellation.
 - Do not complete a payment with an amount or currency mismatch; request a full cancellation. Record successful cancellation as `cancelled`; if cancellation fails, record `refund_pending`.
-- For PortOne communication or cancellation errors, return a retryable error without logging the payment ID together with secret values.
+- For PortOne communication or persistence errors, return a retryable error without logging secret values. Keep unresolved cancellation work durable in `payment_reconciliation`, including when a competing order prevents setting the old purchase to `refund_pending` without violating the active-order index.
 
 ### Property detail and availability
 
@@ -84,7 +86,7 @@ An order reserves the property for 15 minutes. Once expired, another buyer may c
 
 - Show the full price and a `Buy property` button on the property detail page.
 - Send signed-out users to login and return them to the original detail page afterward.
-- On click, run order creation, Toss Payments checkout, and server confirmation in that order.
+- On click, require public PortOne configuration, resolve any saved order through the backend before creating a replacement, then run order creation, Toss Payments checkout, and server confirmation in that order.
 - Prevent repeated clicks while the request is in progress. Distinguish processing, cancellation, failure, server verification, and completion states.
 - On verified success, show purchase completion and refresh property availability. Do not show completion based only on a browser payment response.
 
@@ -95,7 +97,7 @@ An order reserves the property for 15 minutes. Once expired, another buyer may c
 - Do not expose the PortOne API secret, PG secret, or session tokens in the client bundle, responses, or logs.
 - Use unique IDs and idempotent state transitions for order creation, confirmation, and cancellation.
 - Missing payment configuration returns 503; a property reservation conflict returns 409; an unverified payment never completes an order.
-- Asynchronous recovery in this scope relies on the buyer returning from checkout and retrying the confirmation API. PortOne webhook handling and an operator refund dashboard are out of scope.
+- Recovery in this scope relies on the buyer returning from checkout and retrying the confirmation API, which also retries durable cancellation reconciliation. PortOne webhook handling and an operator refund dashboard are out of scope.
 
 ## Verification
 
