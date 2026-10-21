@@ -25,8 +25,8 @@ Add these under **Settings → Secrets and variables → Actions → Variables**
 
 | Variable | Default / purpose |
 | --- | --- |
-| `BACKEND_ORIGIN` | Defaults to `http://222.112.208.68:8000`; compiled into the frontend as its API origin. For an HTTPS frontend, point this to an HTTPS API origin to avoid browser mixed-content blocking. |
-| `FRONTEND_ORIGIN` | Defaults to `http://222.112.208.68`. Set to the actual public site origin, such as `https://example.com`, when TLS/domain routing is configured. |
+| `BACKEND_ORIGIN` | Defaults to `https://api.nenene.n-e.kr`; compiled into the frontend as its API origin. |
+| `FRONTEND_ORIGIN` | Defaults to `https://www.nenene.n-e.kr`; compiled into the frontend as its site origin. |
 | `VITE_KAKAO_JAVASCRIPT_KEY` | Browser-visible Kakao JavaScript key for production. |
 | `VITE_KAKAO_REDIRECT_URI` | Defaults to `<FRONTEND_ORIGIN>/auth/kakao/callback`. Register this URI with Kakao. |
 | `VITE_PORTONE_STORE_ID` | Browser-visible PortOne store ID. |

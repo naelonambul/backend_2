@@ -25,3 +25,20 @@ def test_cors_allows_requests_from_the_configured_frontend_origin():
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == settings.FRONTEND_ORIGIN
+
+
+def test_cors_allows_preflight_from_production_frontend_origin():
+    production_origin = "https://www.nenene.n-e.kr"
+    response = TestClient(app).options(
+        "/user/login",
+        headers={
+            "Origin": production_origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == production_origin
+    assert response.headers["access-control-allow-credentials"] == "true"
+    assert "content-type" in response.headers["access-control-allow-headers"].lower()

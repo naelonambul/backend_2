@@ -51,6 +51,7 @@ def logout(response: Response):
     response.delete_cookie(
         "EN_AT",
         path="/",
+        domain=settings.DOMAIN or None,
         httponly=True,
         secure=settings.SESSION_COOKIE_SECURE,
         samesite=settings.SESSION_COOKIE_SAMESITE,
@@ -130,6 +131,7 @@ def login(req: LoginReq, res: Response, db: Session = Depends(get_db)):
     res.set_cookie(
         "EN_AT",
         createToken(str(user.idx)),
+        domain=settings.DOMAIN or None,
         httponly=True,
         secure=settings.SESSION_COOKIE_SECURE,
         samesite=settings.SESSION_COOKIE_SAMESITE,
@@ -225,6 +227,7 @@ async def complete_kakao_login(
     response.set_cookie(
         "EN_AT",
         createToken(str(user.idx)),
+        domain=settings.DOMAIN or None,
         httponly=True,
         secure=settings.SESSION_COOKIE_SECURE,
         samesite=settings.SESSION_COOKIE_SAMESITE,

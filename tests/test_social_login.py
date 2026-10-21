@@ -51,7 +51,7 @@ def client(tmp_path):
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_kakao_oauth_service] = lambda: oauth
     app.state.test_session = test_session
-    with TestClient(app) as test_client:
+    with TestClient(app, base_url="http://www.nenene.n-e.kr") as test_client:
         test_client.oauth = oauth
         yield test_client
 
@@ -103,7 +103,8 @@ def test_kakao_callback_rejects_non_ascii_state(client):
     assert client.oauth.calls == []
 
 
-def test_first_kakao_login_creates_social_user_and_http_only_session(client):
+def test_first_kakao_login_creates_social_user_and_http_only_session(client, monkeypatch):
+    monkeypatch.setattr("app.api.routers.user.settings.DOMAIN", "nenene.n-e.kr")
     state = start_callback(client)
 
     response = client.post("/user/kakao/callback", json={"code": "one-time-code", "state": state})
@@ -111,6 +112,7 @@ def test_first_kakao_login_creates_social_user_and_http_only_session(client):
     assert response.status_code == 200
     assert response.json() == {"ok": True}
     assert "httponly" in response.headers["set-cookie"].lower()
+    assert "domain=nenene.n-e.kr" in response.headers["set-cookie"].lower()
     with app.state.test_session() as db:
         user = db.scalar(select(User))
         account = db.scalar(select(SocialAccount))
@@ -193,7 +195,8 @@ def test_current_user_rejects_missing_or_invalid_session(client):
     assert invalid.status_code == 401
 
 
-def test_logout_clears_session_cookie_and_current_user(client):
+def test_logout_clears_session_cookie_and_current_user(client, monkeypatch):
+    monkeypatch.setattr("app.api.routers.user.settings.DOMAIN", "nenene.n-e.kr")
     client.post(
         "/user/signup",
         json={"email": "reader@example.com", "password": "secret", "name": "Reader"},
@@ -205,6 +208,7 @@ def test_logout_clears_session_cookie_and_current_user(client):
     assert response.status_code == 200
     assert response.json() == {"ok": True}
     assert "max-age=0" in response.headers["set-cookie"].lower()
+    assert "domain=nenene.n-e.kr" in response.headers["set-cookie"].lower()
     assert client.get("/user/me").status_code == 401
 
 

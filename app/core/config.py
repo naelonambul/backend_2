@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     PORTONE_API_SECRET: str = ""
     FRONTEND_ORIGIN: str = "http://127.0.0.1:5173"
     BACKEND_ORIGIN: str = "http://127.0.0.1:8000"
+    DOMAIN: str = "nenene.n-e.kr"
     KAKAO_REST_API_KEY: str = ""
     KAKAO_CLIENT_SECRET: str = ""
     KAKAO_REDIRECT_URI: str = "http://127.0.0.1:5173/auth/kakao/callback"

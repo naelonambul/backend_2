@@ -9,7 +9,7 @@ function makeResponse(status, payload) {
 }
 
 describe('note API client', () => {
-  it('migrates the previous localhost default to the loopback IP', () => {
+  it('migrates the previous localhost default to the HTTPS API domain', () => {
     const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
     const values = new Map([['note-api-base', 'http://localhost:8000']])
     const storage = {
@@ -19,8 +19,45 @@ describe('note API client', () => {
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage })
 
     try {
-      expect(getConfiguredBaseUrl()).toBe('http://127.0.0.1:8000')
-      expect(values.get('note-api-base')).toBe('http://127.0.0.1:8000')
+      expect(getConfiguredBaseUrl()).toBe('https://api.nenene.n-e.kr')
+      expect(values.get('note-api-base')).toBe('https://api.nenene.n-e.kr')
+    } finally {
+      if (originalLocalStorage) {
+        Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
+      } else {
+        delete globalThis.localStorage
+      }
+    }
+  })
+
+  it('migrates the previous backend IP to the HTTPS API domain', () => {
+    const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    const values = new Map([['note-api-base', 'http://100.100.100.20:8000']])
+    const storage = {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+    }
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage })
+
+    try {
+      expect(getConfiguredBaseUrl()).toBe('https://api.nenene.n-e.kr')
+      expect(values.get('note-api-base')).toBe('https://api.nenene.n-e.kr')
+    } finally {
+      if (originalLocalStorage) {
+        Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
+      } else {
+        delete globalThis.localStorage
+      }
+    }
+  })
+
+  it('uses the HTTPS API domain by default', () => {
+    const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    const storage = { getItem: () => null, setItem: jest.fn() }
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage })
+
+    try {
+      expect(getConfiguredBaseUrl()).toBe('https://api.nenene.n-e.kr')
     } finally {
       if (originalLocalStorage) {
         Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
