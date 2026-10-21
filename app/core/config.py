@@ -7,6 +7,16 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "my-secret-key-for-jwt-must-be-32-bytes-or-more"
     ALGORITHM: str = "HS256"
-    DATABASE_URL: str = "sqlite:///db.sqlite"
+    DATABASE_URL: str = "sqlite:///app.db"
+    PROPERTY_SELLER_EMAIL: str = ""
+    PROPERTY_SELLER_SECRET: str = ""
+    PORTONE_API_SECRET: str = ""
+    FRONTEND_ORIGIN: str = "http://127.0.0.1:5173"
+    BACKEND_ORIGIN: str = "http://127.0.0.1:8000"
+    KAKAO_REST_API_KEY: str = ""
+    KAKAO_CLIENT_SECRET: str = ""
+    KAKAO_REDIRECT_URI: str = "http://127.0.0.1:5173/auth/kakao/callback"
+    SESSION_COOKIE_SECURE: bool = False
+    SESSION_COOKIE_SAMESITE: str = "lax"
 
 settings = Settings()
