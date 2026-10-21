@@ -23,9 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BACKEND_ORIGIN: ${{ vars.BACKEND_ORIGIN || 'https://api.nenene.n-e.kr' }}
-      FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN || format('http://{0}', secrets.DEPLOY_HOST) }}
+      FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN || 'https://www.nenene.n-e.kr' }}
       VITE_KAKAO_JAVASCRIPT_KEY: ${{ vars.VITE_KAKAO_JAVASCRIPT_KEY }}
-      VITE_KAKAO_REDIRECT_URI: ${{ vars.VITE_KAKAO_REDIRECT_URI || format('{0}/auth/kakao/callback', vars.FRONTEND_ORIGIN || format('http://{0}', secrets.DEPLOY_HOST)) }}
+      VITE_KAKAO_REDIRECT_URI: ${{ vars.VITE_KAKAO_REDIRECT_URI || format('{0}/auth/kakao/callback', vars.FRONTEND_ORIGIN || 'https://www.nenene.n-e.kr') }}
       VITE_PORTONE_STORE_ID: ${{ vars.VITE_PORTONE_STORE_ID }}
       VITE_PORTONE_CHANNEL_KEY: ${{ vars.VITE_PORTONE_CHANNEL_KEY }}
     steps:
