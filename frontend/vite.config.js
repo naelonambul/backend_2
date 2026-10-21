@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
   const rootEnv = loadEnv(mode, repositoryRoot, '')
   const frontendEnv = loadEnv(mode, frontendDirectory, '')
   const frontendOrigin = frontendEnv.FRONTEND_ORIGIN || rootEnv.FRONTEND_ORIGIN || 'http://127.0.0.1:5173'
-  const backendOrigin = frontendEnv.BACKEND_ORIGIN || rootEnv.BACKEND_ORIGIN || 'http://127.0.0.1:8000'
+  const backendOrigin = frontendEnv.BACKEND_ORIGIN || rootEnv.BACKEND_ORIGIN || 'http://100.100.100.20:8000'
   const frontendUrl = new URL(frontendOrigin)
 
   return {
