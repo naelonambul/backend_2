@@ -5,86 +5,48 @@ on:
     branches:
       - main
     paths:
-      - 'app/**'
-      - 'requirements.txt'
-      - '.github/deploy/backend.ps1'
-      - '.github/workflows/deploy-backend.yml'
+      - "app/**"
+      - "requirements.txt"
+      - "script/deploy-backend.ps1"
+      - ".github/workflows/deploy-backend.yml"
   workflow_dispatch:
-
-concurrency:
-  group: deploy-backend-${{ github.ref }}
-  cancel-in-progress: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+env:
+  # Backend Windows server paths (.env, app.db, .venv, and certs stay in BACKEND_DIR)
+  BACKEND_DIR: 'C:\server01'
+  STAGING_DIR: 'C:\Users\test\deploy\backend'
+  BACKEND_PORT: "443"
+
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Check deployment secrets
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          BACKEND_SSH_PORT: ${{ secrets.BACKEND_SSH_PORT }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          for secret_name in DEPLOY_HOST BACKEND_SSH_PORT DEPLOY_USER DEPLOY_PASSWORD DEPLOY_KNOWN_HOSTS; do
-            if [ -z "${!secret_name}" ]; then
-              echo "Required Actions secret is missing: ${secret_name}" >&2
-              exit 1
-            fi
-          done
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - uses: actions/checkout@v7
+      - name: Upload backend files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_BACKEND_HOST }}
+          port: ${{ secrets.DEPLOY_BACKEND_PORT }}
+          username: ${{ secrets.DEPLOY_BACKEND_USER }}
+          password: ${{ secrets.DEPLOY_BACKEND_PASSWORD }}
+          source: "app/**,requirements.txt,script/deploy-backend.ps1"
+          target: ${{ env.STAGING_DIR }}
 
-      - name: Package backend source
-        run: zip -qr backend-deploy.zip app requirements.txt
-
-      - name: Install SSH password helper
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends sshpass
-
-      - name: Configure pinned SSH host key
-        shell: bash
-        env:
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/known_hosts"
-
-      - name: Transfer backend package and deployment script
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          BACKEND_SSH_PORT: ${{ secrets.BACKEND_SSH_PORT }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          cp .github/deploy/backend.ps1 _deploy-backend.ps1
-          cp backend-deploy.zip _backend-deploy.zip
-          sshpass -e scp -P "$BACKEND_SSH_PORT" -o StrictHostKeyChecking=yes \
-            _backend-deploy.zip _deploy-backend.ps1 \
-            "$DEPLOY_USER@$DEPLOY_HOST:/C:/server01/"
-
-      - name: Install and restart backend on Windows
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          BACKEND_SSH_PORT: ${{ secrets.BACKEND_SSH_PORT }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          sshpass -e ssh -p "$BACKEND_SSH_PORT" -o StrictHostKeyChecking=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            'powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\server01\_deploy-backend.ps1'
+      - name: Stop server, replace code, restart
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_BACKEND_HOST }}
+          port: ${{ secrets.DEPLOY_BACKEND_PORT }}
+          username: ${{ secrets.DEPLOY_BACKEND_USER }}
+          password: ${{ secrets.DEPLOY_BACKEND_PASSWORD }}
+          command_timeout: 10m
+          script: powershell -NoProfile -ExecutionPolicy Bypass -File "${{ env.STAGING_DIR }}\script\deploy-backend.ps1" -StagingDir "${{ env.STAGING_DIR }}" -BackendDir "${{ env.BACKEND_DIR }}" -Port ${{ env.BACKEND_PORT }}
