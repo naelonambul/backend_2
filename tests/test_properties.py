@@ -30,7 +30,7 @@ def client(tmp_path, monkeypatch):
     app.dependency_overrides[get_db] = override_get_db
     monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_EMAIL", "seller@example.com")
     monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_SECRET", "secret")
-    with TestClient(app) as test_client:
+    with TestClient(app, base_url="http://www.nenene.n-e.kr") as test_client:
         yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=test_engine)

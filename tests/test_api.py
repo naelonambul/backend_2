@@ -27,7 +27,7 @@ def client(tmp_path):
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
+    with TestClient(app, base_url="http://www.nenene.n-e.kr") as test_client:
         yield test_client
 
     app.dependency_overrides.clear()
@@ -49,7 +49,8 @@ def test_signup_returns_public_user_fields_and_rejects_duplicates(client):
     assert duplicate.json()["detail"] == "이미 가입된 이메일입니다."
 
 
-def test_login_returns_email_and_sets_http_only_cookie(client):
+def test_login_returns_email_and_sets_http_only_cookie(client, monkeypatch):
+    monkeypatch.setattr("app.api.routers.user.settings.DOMAIN", "nenene.n-e.kr")
     client.post(
         "/user/signup",
         json={"email": "reader@example.com", "password": "secret", "name": "독자"},
@@ -63,6 +64,7 @@ def test_login_returns_email_and_sets_http_only_cookie(client):
     assert response.json() == {"email": "reader@example.com"}
     assert response.cookies.get("EN_AT")
     assert "httponly" in response.headers["set-cookie"].lower()
+    assert "domain=nenene.n-e.kr" in response.headers["set-cookie"].lower()
 
 
 def test_login_rejects_unknown_users_and_incorrect_passwords(client):

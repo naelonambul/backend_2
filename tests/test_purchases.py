@@ -62,7 +62,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_EMAIL", "seller@example.com")
     monkeypatch.setitem(settings.__dict__, "PROPERTY_SELLER_SECRET", "secret")
     monkeypatch.setitem(settings.__dict__, "PORTONE_API_SECRET", "portone-test-secret")
-    with TestClient(app) as test_client:
+    with TestClient(app, base_url="http://www.nenene.n-e.kr") as test_client:
         test_client.portone = portone
         test_client.db_factory = test_session
         yield test_client
