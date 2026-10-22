@@ -26,14 +26,18 @@ if [[ ! -d "$BUILD_DIR/assets" ]]; then
   exit 1
 fi
 
-# Publishing under /var/www/html requires root or passwordless sudo.
+# Prefer direct writes when the SSH user owns the document root. Otherwise,
+# use passwordless sudo if available.
 SUDO=()
 if (( EUID != 0 )); then
-  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then
-    echo "The SSH user must be root or have passwordless sudo to publish to $HTML_DIR." >&2
+  if [[ -d "$HTML_DIR" && -w "$HTML_DIR" && -x "$HTML_DIR" ]]; then
+    : # The SSH user can publish directly.
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    SUDO=(sudo -n)
+  else
+    echo "The SSH user must be able to write to $HTML_DIR directly or have passwordless sudo." >&2
     exit 1
   fi
-  SUDO=(sudo -n)
 fi
 
 run_privileged() {
