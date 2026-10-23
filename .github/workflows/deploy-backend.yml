@@ -7,7 +7,7 @@ on:
     paths:
       - "app/**"
       - "requirements.txt"
-      - "script/deploy-backend.ps1"
+      - "script/deploy-backend.sh"
       - ".github/workflows/deploy-backend.yml"
   workflow_dispatch:
 
@@ -19,9 +19,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Backend Windows server paths (.env, app.db, .venv, and certs stay in BACKEND_DIR)
-  BACKEND_DIR: 'C:\server01'
-  STAGING_DIR: 'C:\Users\test\deploy\backend'
+  # Existing server state (.env, app.db, .venv, and ssl) stays in BACKEND_DIR.
+  BACKEND_DIR: "/home/test/server"
+  STAGING_DIR: "/tmp/haben-backend-deploy"
   BACKEND_PORT: "443"
 
 jobs:
@@ -31,6 +31,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Prepare remote staging directory
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_BACKEND_HOST }}
+          port: ${{ secrets.DEPLOY_BACKEND_PORT }}
+          username: ${{ secrets.DEPLOY_BACKEND_USER }}
+          password: ${{ secrets.DEPLOY_BACKEND_PASSWORD }}
+          script: rm -rf "${{ env.STAGING_DIR }}" && mkdir -p "${{ env.STAGING_DIR }}"
+
       - name: Upload backend files to server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -38,15 +47,18 @@ jobs:
           port: ${{ secrets.DEPLOY_BACKEND_PORT }}
           username: ${{ secrets.DEPLOY_BACKEND_USER }}
           password: ${{ secrets.DEPLOY_BACKEND_PASSWORD }}
-          source: "app/**,requirements.txt,script/deploy-backend.ps1"
+          source: "app/**,requirements.txt,script/deploy-backend.sh"
           target: ${{ env.STAGING_DIR }}
 
       - name: Stop server, replace code, restart
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_SUDO_PASSWORD: ${{ secrets.DEPLOY_BACKEND_PASSWORD }}
         with:
           host: ${{ secrets.DEPLOY_BACKEND_HOST }}
           port: ${{ secrets.DEPLOY_BACKEND_PORT }}
           username: ${{ secrets.DEPLOY_BACKEND_USER }}
           password: ${{ secrets.DEPLOY_BACKEND_PASSWORD }}
+          envs: DEPLOY_SUDO_PASSWORD
           command_timeout: 10m
-          script: powershell -NoProfile -ExecutionPolicy Bypass -File "${{ env.STAGING_DIR }}\script\deploy-backend.ps1" -StagingDir "${{ env.STAGING_DIR }}" -BackendDir "${{ env.BACKEND_DIR }}" -Port ${{ env.BACKEND_PORT }}
+          script: bash "${{ env.STAGING_DIR }}/script/deploy-backend.sh" "${{ env.STAGING_DIR }}" "${{ env.BACKEND_DIR }}" "${{ env.BACKEND_PORT }}"
