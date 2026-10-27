@@ -17,9 +17,9 @@ watch(() => route.fullPath, () => {
   <div class="app-shell">
     <header class="site-header">
       <div class="site-header__inner">
-        <RouterLink class="brand" :to="{ name: 'property-list' }" aria-label="하벤 홈">
+        <RouterLink class="brand" :to="{ name: 'property-list' }" aria-label="하벤 홈2">
           <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 36 36" fill="none"><path d="m5 17 13-11 13 11v14H5V17Z" fill="currentColor"/><path d="M14 31V19h8v12M5 17l13-11 13 11" stroke="#F4F7F5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          <span class="brand-name">하벤<span> 홈</span></span>
+          <span class="brand-name">하벤<span> 홈2</span></span>
         </RouterLink>
         <nav class="header-nav" aria-label="주요 메뉴"><RouterLink :to="{ name: 'property-list' }">매물 둘러보기</RouterLink><RouterLink :to="{ name: 'question-list' }">질문 게시판</RouterLink><RouterLink :to="{ name: 'login' }">{{ currentUser?.name || '로그인' }}</RouterLink></nav>
         <RouterLink class="header-question-mobile" :to="{ name: 'question-list' }">질문 게시판</RouterLink>
