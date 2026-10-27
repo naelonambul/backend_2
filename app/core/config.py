@@ -19,5 +19,9 @@ class Settings(BaseSettings):
     KAKAO_REDIRECT_URI: str = "http://127.0.0.1:5173/auth/kakao/callback"
     SESSION_COOKIE_SECURE: bool = False
     SESSION_COOKIE_SAMESITE: str = "lax"
+    AWS_REGION: str = "ap-northeast-2"
+    AWS_S3_BUCKET_NAME: str = "ckh-bucket-543587017444-ap-northeast-2-an"
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
 
 settings = Settings()
