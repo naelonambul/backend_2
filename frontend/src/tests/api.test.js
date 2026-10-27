@@ -222,3 +222,86 @@ describe('property API methods', () => {
     })
   })
 })
+
+describe('question API methods', () => {
+  it('creates, reads, updates, lists, and deletes public questions', async () => {
+    const question = { id: 4, title: '창문 방향', contents: '남향인가요?', image_url: null, answer: null }
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(makeResponse(200, [question]))
+      .mockResolvedValueOnce(makeResponse(201, question))
+      .mockResolvedValueOnce(makeResponse(200, question))
+      .mockResolvedValueOnce(makeResponse(200, question))
+      .mockResolvedValueOnce(makeResponse(204, null))
+    const client = createApiClient('http://localhost:8000', fetchMock)
+
+    await expect(client.listQuestions()).resolves.toEqual([question])
+    await expect(client.createQuestion({ title: question.title, contents: question.contents, image_url: null })).resolves.toEqual(question)
+    await expect(client.readQuestion(4)).resolves.toEqual(question)
+    await expect(client.updateQuestion(4, { title: '바뀐 제목', contents: '수정된 질문', image_url: null })).resolves.toEqual(question)
+    await expect(client.deleteQuestion(4)).resolves.toBeNull()
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:8000/questions',
+      'http://localhost:8000/questions',
+      'http://localhost:8000/questions/4',
+      'http://localhost:8000/questions/4',
+      'http://localhost:8000/questions/4',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options.method)).toEqual(['GET', 'POST', 'GET', 'PUT', 'DELETE'])
+  })
+
+  it('uploads one image to the presigned URL before returning its public URL', async () => {
+    const file = new Blob(['image-bytes'], { type: 'image/png' })
+    Object.defineProperty(file, 'name', { value: 'room.png' })
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(makeResponse(200, {
+        upload_url: 'https://s3.example/upload?signature=abc',
+        image_url: 'https://bucket.s3.ap-northeast-2.amazonaws.com/questions/id.png',
+      }))
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+    const client = createApiClient('http://localhost:8000', fetchMock)
+
+    await expect(client.uploadQuestionImage(file)).resolves.toBe('https://bucket.s3.ap-northeast-2.amazonaws.com/questions/id.png')
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:8000/questions/presigned-upload', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: 'room.png', content_type: 'image/png' }),
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://s3.example/upload?signature=abc', {
+      method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: file,
+    })
+  })
+
+  it('does not return an image URL when direct upload fails', async () => {
+    const file = new Blob(['image-bytes'], { type: 'image/jpeg' })
+    Object.defineProperty(file, 'name', { value: 'room.jpg' })
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(makeResponse(200, { upload_url: 'https://s3.example/upload', image_url: 'https://s3.example/room.jpg' }))
+      .mockResolvedValueOnce({ ok: false, status: 403 })
+    const client = createApiClient('http://localhost:8000', fetchMock)
+
+    await expect(client.uploadQuestionImage(file)).rejects.toMatchObject({
+      name: 'ApiError', status: 403, message: '이미지를 업로드하지 못했습니다. (403)',
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('creates or replaces one answer and supports deleting it', async () => {
+    const answer = { id: 5, contents: '거실은 남향입니다.' }
+    const question = { id: 4, title: '창문 방향', contents: '남향인가요?', image_url: null, answer }
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(makeResponse(201, question))
+      .mockResolvedValueOnce(makeResponse(200, question))
+      .mockResolvedValueOnce(makeResponse(204, null))
+    const client = createApiClient('http://localhost:8000', fetchMock)
+
+    await expect(client.createQuestionAnswer(4, { contents: answer.contents })).resolves.toEqual(question)
+    await expect(client.updateQuestionAnswer(4, { contents: '남향이에요.' })).resolves.toEqual(question)
+    await expect(client.deleteQuestionAnswer(4)).resolves.toBeNull()
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:8000/questions/4/answer',
+      'http://localhost:8000/questions/4/answer',
+      'http://localhost:8000/questions/4/answer',
+    ])
+    expect(fetchMock.mock.calls.map(([, options]) => options.method)).toEqual(['POST', 'PUT', 'DELETE'])
+  })
+})

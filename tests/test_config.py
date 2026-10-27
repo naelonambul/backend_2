@@ -14,6 +14,19 @@ def test_frontend_and_backend_origins_default_to_loopback_addresses(monkeypatch)
     assert settings.BACKEND_ORIGIN == "http://127.0.0.1:8000"
 
 
+def test_s3_settings_accept_bucket_and_region_without_static_credentials():
+    settings = Settings(
+        _env_file=None,
+        AWS_REGION="ap-northeast-2",
+        AWS_S3_BUCKET_NAME="questions-bucket",
+    )
+
+    assert settings.AWS_REGION == "ap-northeast-2"
+    assert settings.AWS_S3_BUCKET_NAME == "questions-bucket"
+    assert settings.AWS_ACCESS_KEY_ID == ""
+    assert settings.AWS_SECRET_ACCESS_KEY == ""
+
+
 def test_cors_allows_requests_from_the_configured_frontend_origin():
     response = TestClient(app).options(
         "/user/me",

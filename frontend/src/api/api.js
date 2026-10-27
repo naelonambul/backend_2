@@ -69,6 +69,23 @@ export function createApiClient(baseUrl = getConfiguredBaseUrl(), fetchImpl) {
     return payload
   }
 
+  async function uploadQuestionImage(file) {
+    const { upload_url: uploadUrl, image_url: imageUrl } = await request('/questions/presigned-upload', {
+      method: 'POST',
+      body: { filename: file.name, content_type: file.type },
+    })
+    const fetcher = fetchImpl ?? globalThis.fetch
+    const response = await fetcher(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    })
+    if (!response.ok) {
+      throw new ApiError('이미지를 업로드하지 못했습니다. (' + response.status + ')', response.status)
+    }
+    return imageUrl
+  }
+
   return {
     ping: () => request('/'),
     signup: (data) => request('/user/signup', { method: 'POST', body: data }),
@@ -80,6 +97,15 @@ export function createApiClient(baseUrl = getConfiguredBaseUrl(), fetchImpl) {
     registerBoard: (data) => request('/board/register', { method: 'POST', body: data }),
     listBoards: () => request('/board/list'),
     readBoard: (idx) => request('/board/read/' + encodeURIComponent(idx)),
+    listQuestions: () => request('/questions'),
+    readQuestion: (id) => request('/questions/' + encodeURIComponent(id)),
+    createQuestion: (data) => request('/questions', { method: 'POST', body: data }),
+    updateQuestion: (id, data) => request('/questions/' + encodeURIComponent(id), { method: 'PUT', body: data }),
+    deleteQuestion: (id) => request('/questions/' + encodeURIComponent(id), { method: 'DELETE' }),
+    uploadQuestionImage,
+    createQuestionAnswer: (id, data) => request('/questions/' + encodeURIComponent(id) + '/answer', { method: 'POST', body: data }),
+    updateQuestionAnswer: (id, data) => request('/questions/' + encodeURIComponent(id) + '/answer', { method: 'PUT', body: data }),
+    deleteQuestionAnswer: (id) => request('/questions/' + encodeURIComponent(id) + '/answer', { method: 'DELETE' }),
     listProperties: () => request('/properties'),
     readProperty: (idx) => request('/properties/' + encodeURIComponent(idx)),
     registerProperty: (data) => request('/properties', { method: 'POST', body: data }),

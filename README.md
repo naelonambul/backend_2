@@ -55,6 +55,13 @@ Copy-Item frontend/.env.example frontend/.env.local
 | `BACKEND_ORIGIN` | 백엔드 주소. 기본값은 `http://127.0.0.1:8000` |
 | `SESSION_COOKIE_SECURE` | HTTPS 환경에서는 `true`, 로컬 HTTP 개발에서는 `false` |
 | `SESSION_COOKIE_SAMESITE` | 세션 쿠키 SameSite 설정. 기본값은 `lax` |
+| `AWS_REGION` | 이미지 저장 S3 버킷의 리전 |
+| `AWS_S3_BUCKET_NAME` | 질문 이미지 저장 S3 버킷 이름 |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3 업로드 URL 서명에 사용할 AWS 자격 증명. IAM 역할 등 기본 자격 증명 체인을 사용하면 비워 둘 수 있습니다. |
+
+### 질문 이미지 S3 설정
+
+백엔드 `.env`에 버킷 이름과 리전을 설정하고 AWS 자격 증명을 지정합니다. 서명에 사용하는 IAM 자격 증명에는 해당 버킷의 질문 이미지 경로에 대한 `s3:PutObject` 권한이 필요합니다. 브라우저에서 S3로 직접 업로드하므로 버킷 CORS에 사용하는 프런트엔드 출처(로컬에서는 `http://127.0.0.1:5173`), `PUT` 메서드, `Content-Type` 헤더를 허용해야 합니다. 이미지 조회는 버킷의 공개 읽기 설정에 의존합니다. 환경 설정을 변경한 후 백엔드를 다시 시작하세요.
 
 `PROPERTY_SELLER_EMAIL`에 지정한 계정만 판매자입니다. 이 계정은 `PROPERTY_SELLER_SECRET`과 일치하는 비밀번호로 등록·로그인해야 하며, 다른 가입자는 구매자 권한을 갖습니다. 카카오로 새로 로그인한 계정도 구매자로 생성됩니다.
 
