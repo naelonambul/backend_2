@@ -6,6 +6,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
+from app.core.logging_config import configure_logging
+
+configure_logging()
+
 from app.api.routers import user, board, property, purchase, questions
 from app.db.database import Base, engine
 from app.models.board import Board

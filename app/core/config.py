@@ -23,5 +23,6 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET_NAME: str = "ckh-bucket-543587017444-ap-northeast-2-an"
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
+    LOG_FILE: str = "/var/log/app.log"
 
 settings = Settings()
