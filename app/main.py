@@ -2,11 +2,9 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-import os
 
 from app.core.logging_config import configure_logging
+from app.core.http_logging import HttpAccessLogMiddleware
 
 configure_logging()
 
@@ -21,12 +19,12 @@ from app.models.payment_reconciliation import PaymentReconciliation
 from app.models.question import Question, QuestionAnswer
 from app.core.config import settings
 
-app = FastAPI(title="노트 API", version="0.1.0")
+fastapi_app = FastAPI(title="노트 API", version="0.1.0")
 
 # CORS 설정: 프론트엔드 HTML/JS에서의 비동기 API 호출 허용
 cors_origins = list(dict.fromkeys([settings.FRONTEND_ORIGIN, "https://www.nenene.n-e.kr"]))
 
-app.add_middleware(
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
@@ -34,20 +32,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(user.router)
-app.include_router(board.router)
-app.include_router(property.router)
-app.include_router(purchase.router)
-app.include_router(questions.router)
+fastapi_app.include_router(user.router)
+fastapi_app.include_router(board.router)
+fastapi_app.include_router(property.router)
+fastapi_app.include_router(purchase.router)
+fastapi_app.include_router(questions.router)
 
 Base.metadata.create_all(bind=engine)
 
-# frontend 폴더가 존재할 경우 정적 파일 서빙 마운트
-frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
-if os.path.exists(frontend_dir):
-    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
-
-@app.get("/")
+@fastapi_app.get("/")
 def main():
     return {"message": "메인 페이지입니다."}
+
+
+app = HttpAccessLogMiddleware(fastapi_app)
 

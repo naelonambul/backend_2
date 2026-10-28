@@ -35,6 +35,12 @@ def client(tmp_path):
     test_engine.dispose()
 
 
+def test_frontend_files_are_not_served_by_the_backend(client):
+    response = client.get("/static/index.html")
+
+    assert response.status_code == 404
+
+
 def test_signup_returns_public_user_fields_and_rejects_duplicates(client):
     payload = {"email": "reader@example.com", "password": "secret", "name": "독자"}
 
