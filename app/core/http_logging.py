@@ -177,6 +177,7 @@ class HttpAccessLogMiddleware:
                 "method": scope.get("method", ""),
                 "url": request_url,
                 "client_ip": client_ip,
+                "status": response_status,
                 "status_code": response_status,
                 "response_body_bytes": body_size,
                 "response_body": _response_body_for_log(

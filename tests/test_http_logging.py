@@ -33,6 +33,7 @@ def test_http_log_records_request_and_redacted_response(caplog):
     assert logged_url.path == "/user/kakao/state"
     assert parse_qs(logged_url.query)["access_token"] == ["[REDACTED]"]
     assert entry["client_ip"] == "203.0.113.17"
+    assert entry["status"] == 200
     assert entry["status_code"] == 200
     assert entry["response_body"] == {"state": "[REDACTED]"}
     assert response.json()["state"] != "[REDACTED]"
@@ -119,5 +120,6 @@ def test_http_log_captures_unhandled_500_response_body(caplog):
 
     entry = _last_http_entry(caplog)
     assert response.status_code == 500
+    assert entry["status"] == 500
     assert entry["status_code"] == 500
     assert entry["response_body"] == "Internal Server Error"
