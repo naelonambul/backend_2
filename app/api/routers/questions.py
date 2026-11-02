@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
-from app.db.database import get_db
+from app.db.database import get_db, get_read_db
 from app.models.question import Question, QuestionAnswer
 from app.schemas.question import (
     AnswerRead,
@@ -98,7 +98,7 @@ def _get_question(db: Session, question_id: int) -> Question:
 
 
 @router.get("", response_model=list[QuestionRead])
-def list_questions(db: Session = Depends(get_db)):
+def list_questions(db: Session = Depends(get_read_db)):
     questions = db.scalars(
         select(Question)
         .options(selectinload(Question.answer))
@@ -117,7 +117,7 @@ def create_question(request: QuestionWrite, db: Session = Depends(get_db)):
 
 
 @router.get("/{question_id}", response_model=QuestionRead)
-def read_question(question_id: int, db: Session = Depends(get_db)):
+def read_question(question_id: int, db: Session = Depends(get_read_db)):
     return _question_read(_get_question(db, question_id))
 
 

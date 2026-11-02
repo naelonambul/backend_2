@@ -9,6 +9,7 @@ from pathlib import Path
 _database_environment = (
     "DATABASE_URL",
     "DB_HOST",
+    "DB_READ_HOST",
     "DB_PORT",
     "DB_USER",
     "DB_PASSWORD",
@@ -27,6 +28,7 @@ try:
         {
             "DATABASE_URL": "sqlite:///:memory:",
             "DB_HOST": "",
+            "DB_READ_HOST": "",
             "DB_PORT": "3306",
             "DB_USER": "",
             "DB_PASSWORD": "",

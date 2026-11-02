@@ -7,14 +7,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.db.database import Base, get_db
+from app.db.database import Base, get_db, get_read_db
 from app.main import app
 from app.api.routers.questions import create_s3_client
 from app.core.config import settings
 
 
 @pytest.fixture
-def client(tmp_path):
+def question_session_factory(tmp_path):
     database_path = (tmp_path / "questions.db").as_posix()
     test_engine = create_engine(
         f"sqlite:///{database_path}",
@@ -24,21 +24,29 @@ def client(tmp_path):
     Base.metadata.create_all(bind=test_engine)
     test_session = sessionmaker(autoflush=False, bind=test_engine)
 
+    yield test_session
+
+    Base.metadata.drop_all(bind=test_engine)
+    test_engine.dispose()
+
+
+@pytest.fixture
+def client(question_session_factory):
+
     def override_get_db():
-        db = test_session()
+        db = question_session_factory()
         try:
             yield db
         finally:
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_read_db] = override_get_db
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
         app.dependency_overrides.clear()
-        Base.metadata.drop_all(bind=test_engine)
-        test_engine.dispose()
 
 
 def test_question_list_starts_empty(client):
@@ -46,6 +54,52 @@ def test_question_list_starts_empty(client):
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_question_get_routes_use_read_session_and_mutations_use_primary(
+    client, question_session_factory
+):
+    calls = {"read": 0, "primary": 0}
+
+    def session_dependency():
+        db = question_session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    def override_primary_db():
+        calls["primary"] += 1
+        yield from session_dependency()
+
+    def override_read_db():
+        calls["read"] += 1
+        yield from session_dependency()
+
+    app.dependency_overrides[get_db] = override_primary_db
+    app.dependency_overrides[get_read_db] = override_read_db
+
+    created = client.post("/questions", json={"title": "Routing", "contents": "Check"})
+    assert created.status_code == 201
+    question_id = created.json()["id"]
+    assert calls == {"read": 0, "primary": 1}
+
+    assert client.get("/questions").status_code == 200
+    assert client.get(f"/questions/{question_id}").status_code == 200
+    assert calls == {"read": 2, "primary": 1}
+
+    assert client.put(
+        f"/questions/{question_id}", json={"title": "Updated", "contents": "Check"}
+    ).status_code == 200
+    assert client.post(
+        f"/questions/{question_id}/answer", json={"contents": "Answer"}
+    ).status_code == 201
+    assert client.put(
+        f"/questions/{question_id}/answer", json={"contents": "Updated answer"}
+    ).status_code == 200
+    assert client.delete(f"/questions/{question_id}/answer").status_code == 204
+    assert client.delete(f"/questions/{question_id}").status_code == 204
+    assert calls == {"read": 2, "primary": 6}
 
 
 def test_question_can_be_created_read_updated_and_deleted(client):

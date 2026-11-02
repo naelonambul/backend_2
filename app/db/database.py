@@ -9,14 +9,28 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from app.core.config import settings
 # DB 연결을 관리하는 엔진
-engine = create_engine(settings.DATABASE_URL, echo=False)
+engine = create_engine(settings.database_url, echo=False)
+read_engine = (
+    create_engine(settings.read_database_url, echo=False)
+    if settings.read_database_url != settings.database_url
+    else engine
+)
 # DB 작업용 세션을 만드는 도구
 SessionLocal = sessionmaker(autoflush=False, bind=engine)
+ReadSessionLocal = sessionmaker(autoflush=False, bind=read_engine)
 
 def get_db():
     db = SessionLocal()
     try:
-        yield db  # return은 값을 반환하고 함수를 종료하지만 yield 반환하고 함수를 일시 중지한다.
+        yield db
+    finally:
+        db.close()
+
+
+def get_read_db():
+    db = ReadSessionLocal()
+    try:
+        yield db
     finally:
         db.close()
 

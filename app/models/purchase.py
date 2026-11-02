@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import DDL, DateTime, ForeignKey, Index, Integer, String, event, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -18,7 +18,7 @@ class Purchase(Base):
             "property_idx",
             unique=True,
             sqlite_where=text("status IN ('pending', 'paid', 'refund_pending')"),
-        ),
+        ).ddl_if(dialect="sqlite"),
     )
 
     purchase_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -36,3 +36,18 @@ class Purchase(Base):
         DateTime(timezone=True), default=lambda: utc_now() + timedelta(minutes=15), nullable=False
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# MySQL/MariaDB have no partial indexes. A generated value is NULL for
+# inactive purchases, allowing multiple inactive rows while enforcing one
+# active purchase per property. Existing SQLite schemas stay unchanged.
+event.listen(
+    Purchase.__table__,
+    "after_create",
+    DDL(
+        "ALTER TABLE purchase ADD COLUMN active_property_idx INTEGER "
+        "GENERATED ALWAYS AS (CASE WHEN status IN ('pending', 'paid', 'refund_pending') "
+        "THEN property_idx ELSE NULL END) VIRTUAL, "
+        "ADD UNIQUE INDEX uq_purchase_active_property (active_property_idx)"
+    ).execute_if(dialect=("mysql", "mariadb")),
+)
